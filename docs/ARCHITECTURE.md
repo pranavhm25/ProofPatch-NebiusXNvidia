@@ -63,10 +63,13 @@ flowchart LR
 
 ### 3.5 Nebius provider adapter
 - Encapsulate endpoint, authentication, model ID, request settings, and provider-specific error mapping.
+- Resolve `fast`, `reasoning`, and `advanced` roles through the central model registry; verify configured IDs against the authenticated `/models` catalog.
+- Use `fast` for routine calls and `reasoning` for core plan/patch analysis. Use `advanced` only when explicitly requested or at the documented failed-test revision step.
+- Apply the configured fallback-role order when a model is not catalogued or returns not-found, and record requested and actual model IDs so fallback is never hidden.
 - Validate structured model responses.
 - Record model ID and prompt version.
 - Apply capped retries only to transient provider failures.
-- Never return provider secrets to callers or logs.
+- Record request outcome using safe metadata only. Never log provider credentials, prompts, source contents, response bodies, or exception text that could contain source.
 
 ### 3.6 Patch validator/applier
 - Validate schema, paths, patch size, and changed-file count.

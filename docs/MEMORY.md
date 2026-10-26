@@ -18,8 +18,8 @@
 
 1. Python-only MVP.
 2. ZIP upload only for the first release.
-3. One NVIDIA open-source model through Nebius Token Factory as the primary model.
-4. The exact model ID must be confirmed from the live catalog and account access.
+3. Nebius Token Factory model IDs are configured centrally by role (fast, reasoning, advanced).
+4. Configured model IDs must be confirmed from the authenticated live catalog and account access.
 5. Use the required supported sandbox/execution path for the chosen track.
 6. One initial repair attempt plus at most one retry.
 7. pytest is the initial test runner.
@@ -71,11 +71,16 @@ Do not treat the following as confirmed until tested:
 **Decision:** Limit MVP to Python projects with pytest.  
 **Rationale:** Keeps parsing, execution, and test-result interpretation manageable.
 
+### ADR-007: Role-based model selection
+**Decision:** Use the fast role for routine tasks, reasoning for core plan/patch analysis, and advanced only when explicitly selected or during the documented failed-test revision escalation.
+**Rationale:** Supports Token Factory model choice without duplicating provider configuration or adding multi-model orchestration. Ordered fallback roles are configurable, exclude advanced as an implicit fallback, and are recorded in safe request logs.
+**Verification status (2026-10-27):** The live catalog contained `nvidia/Nemotron-3_5-Lightning`, `nvidia/nemotron-3-super-120b-a12b`, and `nvidia/Nemotron-3-Ultra-550b-a55b`; a real inference request to the configured reasoning model succeeded.
+
 ## 5. Current Milestones
 
 Update this section as work progresses.
 
-- [ ] Token Factory model call verified.
+- [x] Token Factory configured models verified in the authenticated catalog; reasoning-model inference succeeded.
 - [x] Required sandbox access verified (local process adapter with environment scrubbing & rlimit).
 - [x] Public repository initialized with .gitignore and structure.
 - [x] API contracts frozen.
@@ -102,7 +107,7 @@ Update this section as work progresses.
 
 ## 7. Open Questions
 
-1. What exact model ID is confirmed for the account?
+1. Will access and credits for the verified model IDs remain available through submission?
 2. What exact sandbox workflow is available?
 3. Which limits apply to model requests and sandbox execution?
 4. Which free host meets runtime and background-job needs?
@@ -127,3 +132,5 @@ Update this section as work progresses.
 | 2026-10-21 | Token Factory and sandbox access must be verified on Day 1 | Open gate | AI/backend owners |
 | 2026-10-26 | Docker unavailable on dev environment; implemented hardened local subprocess adapter with environment scrubbing, non-shell execution, and Linux rlimits | Accepted baseline | WS-BE |
 | 2026-10-26 | Core pipeline implemented: upload, context build, patch validation/applier, pytest runner, verdict calculation, retry orchestration, and React Vite UI | Implemented & Tested | WS-INT |
+| 2026-10-27 | Centralized Token Factory model roles, bounded configurable fallback, catalog verification, safe request outcome logging, and one-request live integration check | Implemented and live verified | Backend |
+| 2026-10-27 | Verified FAST, REASONING, and ADVANCED model IDs in the authenticated Token Factory catalog; reasoning inference succeeded | Live verified | Backend |

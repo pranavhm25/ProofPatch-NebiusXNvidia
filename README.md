@@ -79,7 +79,7 @@ flowchart LR
 ### Prerequisites
 - Python 3.11+
 - Node.js v18+ and npm
-- Nebius Token Factory API Key & Model ID
+- Nebius Token Factory API key and configured role model IDs
 
 ### 1. Backend Setup
 ```bash
@@ -89,7 +89,8 @@ cd ProofPatch-NebiusXNvidia
 
 # Configure environment
 cp .env.example .env
-# Edit .env and supply NEBIUS_API_KEY and NEBIUS_MODEL
+# Set NEBIUS_API_KEY and the three role model IDs in .env.
+# Confirm IDs with the authenticated Token Factory catalog before use.
 
 # Install backend dependencies
 cd backend
@@ -122,10 +123,13 @@ Execute the comprehensive test suite covering archive traversal protection, atom
 PYTHONPATH=backend pytest backend/tests/unit -v
 ```
 
-### Verify Token Factory Connectivity (Gate D1-01)
-Validate your Nebius credentials and model response:
+### Verify Token Factory Connectivity
+The optional live check compares every configured model ID with the account's
+authenticated `/models` catalog and makes one real inference request using the
+configured reasoning model. It requires the API key and role IDs in `.env` and
+may consume credits:
 ```bash
-python3 scripts/test_nebius_connection.py
+PYTHONPATH=backend pytest backend/tests/integration/test_live_nebius.py -v
 ```
 
 ### Sample Bug Fixture

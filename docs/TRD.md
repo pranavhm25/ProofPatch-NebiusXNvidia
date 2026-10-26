@@ -41,7 +41,12 @@ Configuration is loaded on the server only.
 Required variables:
 - `NEBIUS_API_KEY`: secret API key.
 - `NEBIUS_BASE_URL`: official base URL confirmed for the account.
-- `NEBIUS_MODEL`: exact model identifier verified against the current catalog.
+- `NEBIUS_MODEL_FAST`: exact catalog model ID for routine/lightweight requests.
+- `NEBIUS_MODEL_REASONING`: exact catalog model ID for core plan and patch analysis.
+- `NEBIUS_MODEL_ADVANCED`: exact catalog model ID for the explicit failed-test escalation.
+- `NEBIUS_MODEL_FALLBACK_ROLES`: ordered comma-separated fallback roles (default `reasoning,fast`); `advanced` is never an implicit fallback.
+- `NEBIUS_MODEL`: optional legacy setting used only when a role-specific model is blank.
+- `PROVIDER_TIMEOUT_SECONDS`: provider request timeout.
 - `SANDBOX_PROVIDER`: identifier for the confirmed execution implementation.
 - `MAX_UPLOAD_BYTES`: compressed upload limit.
 - `MAX_EXTRACTED_BYTES`: expanded content limit.
@@ -157,8 +162,11 @@ Rules:
 ## 6. Model Integration
 
 ### 6.1 Requirements
-- Use a verified NVIDIA open-source model accessible through Nebius Token Factory.
-- Keep model ID configurable.
+- Use model IDs confirmed by the authenticated Token Factory `/models` catalog.
+- Keep model IDs centralized by role; use `fast` by default for routine calls and `reasoning` for core ProofPatch planning and patch generation.
+- Use `advanced` only when explicitly requested or for the documented failed-test revision escalation.
+- When a requested model is unavailable, try only the configured fallback roles. Record the selected/actual model and outcome; do not describe a fallback as the requested model.
+- The live integration test verifies configured IDs against the catalog and sends one inference request. Unit tests mock provider responses and do not consume credits.
 - Record model ID and prompt/schema version with each job.
 - Use low-variance generation settings where supported.
 - Request structured output, then validate it independently.
