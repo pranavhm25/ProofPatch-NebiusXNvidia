@@ -82,7 +82,7 @@ def create_job(payload: CreateJobRequest, background_tasks: BackgroundTasks):
             payload.bug_report,
             payload.expected_behavior,
             payload.observed_behavior,
-            settings.nebius_model or "unconfigured",
+            "pending selection",
             now.isoformat(),
             now.isoformat(),
             expires_at.isoformat(),

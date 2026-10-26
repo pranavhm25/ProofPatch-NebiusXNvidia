@@ -3,11 +3,10 @@
 Owns the repair pipeline state machine:
   QUEUED -> VALIDATING -> ANALYZING -> PLANNING -> PATCHING -> TESTING -> [RETRYING] -> COMPLETED / FAILED / BLOCKED
 
-Rules:
-- Max 1 retry (2 attempts total).
-- State transitions record timestamp and sanitized event messages in DB.
-- Untrusted code runs only via sandbox.run_tests().
-- Verifies and saves artifacts (diff and patched ZIP) on completion.
+Model role assignment:
+- REASONING: Planning and initial candidate patch generation.
+- ADVANCED: Test revision retry when initial attempt fails.
+- FAST: Lightweight context preparation / summaries.
 """
 from __future__ import annotations
 
@@ -39,6 +38,7 @@ from app.services import (
     sandbox,
     verdict as verdict_svc,
 )
+from app.services.model_registry import ModelRole
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +50,6 @@ def _utc_now() -> str:
 def record_event(job_id: str, stage: str, message: str) -> None:
     """Record an audit event for the job."""
     conn = get_connection()
-    # Get next sequence number
     cur = conn.cursor()
     cur.execute("SELECT COALESCE(MAX(sequence_no), 0) + 1 FROM job_events WHERE job_id = ?", (job_id,))
     seq = cur.fetchone()[0]
@@ -68,6 +67,7 @@ def update_job_status(
     error_code: Optional[str] = None,
     final_verdict: Optional[FinalVerdict] = None,
     attempt_count: Optional[int] = None,
+    model_id: Optional[str] = None,
 ) -> None:
     """Update job status and stage in database."""
     conn = get_connection()
@@ -89,6 +89,9 @@ def update_job_status(
     if attempt_count is not None:
         fields.append("attempt_count = ?")
         params.append(attempt_count)
+    if model_id:
+        fields.append("model_id = ?")
+        params.append(model_id)
 
     params.append(job_id)
     sql = f"UPDATE jobs SET {', '.join(fields)} WHERE id = ?"
@@ -98,10 +101,7 @@ def update_job_status(
 
 
 def run_repair_job(job_id: str) -> None:
-    """
-    Execute the full repair pipeline for the specified job.
-    Called asynchronously by the background task runner.
-    """
+    """Execute the full repair pipeline for the specified job."""
     conn = get_connection()
     cur = conn.cursor()
     cur.execute(
@@ -128,6 +128,7 @@ def run_repair_job(job_id: str) -> None:
 
     job_work_dir = settings.workspace_root / f"job_{job_id}"
     job_work_dir.mkdir(parents=True, exist_ok=True)
+    models_used: list[str] = []
 
     try:
         # ── 1. VALIDATING & ANALYZING ──────────────────────────────────────────
@@ -142,19 +143,34 @@ def run_repair_job(job_id: str) -> None:
         update_job_status(job_id, JobStatus.ANALYZING, "Building context and inspecting source")
         context = repo_inspector.build_context(baseline_dir, inventory, bug_report)
 
-        # ── 2. PLANNING ───────────────────────────────────────────────────────
+        # ── 2. PLANNING (Role: REASONING) ───────────────────────────────────────
         update_job_status(job_id, JobStatus.PLANNING, "Requesting repair plan from model")
-        plan = nebius_client.generate_plan(
+        plan, plan_model = nebius_client.generate_plan(
             context=context,
             bug_report=bug_report,
             expected_behavior=exp_behavior,
             observed_behavior=obs_behavior,
             job_id=job_id,
+            role=ModelRole.REASONING,
         )
+        models_used.append(plan_model)
 
-        # ── 3. ATTEMPT 1: PATCHING & TESTING ──────────────────────────────────
-        update_job_status(job_id, JobStatus.PATCHING, "Generating candidate patch", attempt_count=1)
-        proposal = nebius_client.generate_patch(context=context, plan=plan, job_id=job_id)
+        # ── 3. ATTEMPT 1: PATCHING & TESTING (Role: REASONING) ──────────────────
+        update_job_status(
+            job_id,
+            JobStatus.PATCHING,
+            "Generating candidate patch",
+            attempt_count=1,
+            model_id=plan_model,
+        )
+        proposal, patch_model = nebius_client.generate_patch(
+            context=context,
+            plan=plan,
+            job_id=job_id,
+            role=ModelRole.REASONING,
+        )
+        if patch_model not in models_used:
+            models_used.append(patch_model)
 
         attempt1_dir = job_work_dir / "attempt_1"
         attempt1_id = str(uuid.uuid4())
@@ -213,20 +229,27 @@ def run_repair_job(job_id: str) -> None:
         final_test_run = test_run_1
         final_working_dir = attempt1_dir
         final_diff = diff_text
-        final_changed_files = changed_files
 
-        # ── 4. RETRY LOGIC (Max 1 retry if tests failed and eligible) ─────────
+        # The advanced role is reserved for this documented failed-test escalation.
         if test_run_1.test_status in ("FAILED", "ERROR") and settings.max_repair_attempts > 1:
-            update_job_status(job_id, JobStatus.RETRYING, "Revising patch based on test failures", attempt_count=2)
+            update_job_status(
+                job_id,
+                JobStatus.RETRYING,
+                "Revising patch using test failure evidence",
+                attempt_count=2,
+            )
             try:
-                revised_proposal = nebius_client.revise_patch(
+                revised_proposal, revise_model = nebius_client.revise_patch(
                     original_patch=diff_text,
                     test_stdout=test_run_1.stdout,
                     test_stderr=test_run_1.stderr,
                     context=context,
                     plan=plan,
                     job_id=job_id,
+                    role=ModelRole.ADVANCED,
                 )
+                if revise_model not in models_used:
+                    models_used.append(revise_model)
 
                 attempt2_dir = job_work_dir / "attempt_2"
                 attempt2_id = str(uuid.uuid4())
@@ -284,12 +307,11 @@ def run_repair_job(job_id: str) -> None:
                 final_test_run = test_run_2
                 final_working_dir = attempt2_dir
                 final_diff = diff_text_2
-                final_changed_files = changed_files_2
 
             except Exception as retry_exc:
-                logger.warning("Retry attempt failed to complete: %s", retry_exc)
+                logger.warning("Retry attempt failed: outcome=error type=%s", type(retry_exc).__name__)
 
-        # ── 5. VERDICT CALCULATION & ARTIFACT CREATION ────────────────────────
+        # ── 5. VERDICT & ARTIFACTS ────────────────────────────────────────────
         test_schema = TestResultSchema(
             status=TestStatus(final_test_run.test_status),
             command_id="pytest-default",
@@ -303,12 +325,11 @@ def run_repair_job(job_id: str) -> None:
             output_truncated=final_test_run.output_truncated,
         )
 
-        final_verdict, summary, limitations = verdict_svc.compute_verdict(
+        final_verdict, summary, _ = verdict_svc.compute_verdict(
             test_result=test_schema,
             attempt_status="TESTED",
         )
 
-        # Store artifacts (patch and patched zip)
         _create_and_save_artifacts(
             job_id=job_id,
             diff_text=final_diff,
@@ -317,16 +338,18 @@ def run_repair_job(job_id: str) -> None:
         )
 
         terminal_status = JobStatus.COMPLETED if final_verdict == FinalVerdict.VERIFIED else JobStatus.FAILED
+        primary_model = ", ".join(models_used) if models_used else "unconfigured"
         update_job_status(
             job_id=job_id,
             status=terminal_status,
             stage=summary,
             final_verdict=final_verdict,
+            model_id=primary_model,
         )
-        logger.info("Job %s completed with verdict: %s", job_id, final_verdict.value)
+        logger.info("Job %s completed: verdict=%s, models=%s", job_id, final_verdict.value, primary_model)
 
     except ProofPatchError as ppe:
-        logger.warning("Job %s failed with ProofPatchError: %s (%s)", job_id, ppe.code, ppe.message)
+        logger.warning("Job %s failed: error_code=%s", job_id, ppe.code)
         update_job_status(
             job_id=job_id,
             status=JobStatus.FAILED if ppe.code not in (ErrorCode.PROVIDER_AUTH_ERROR, ErrorCode.SANDBOX_UNAVAILABLE) else JobStatus.BLOCKED,
@@ -335,7 +358,7 @@ def run_repair_job(job_id: str) -> None:
             final_verdict=FinalVerdict.BLOCKED if ppe.code in (ErrorCode.PROVIDER_AUTH_ERROR, ErrorCode.SANDBOX_UNAVAILABLE) else FinalVerdict.FAILED,
         )
     except Exception as exc:
-        logger.exception("Unexpected exception during job %s: %s", job_id, exc)
+        logger.error("Unexpected job failure: job=%s error_type=%s", job_id, type(exc).__name__)
         update_job_status(
             job_id=job_id,
             status=JobStatus.FAILED,
@@ -355,7 +378,6 @@ def _create_and_save_artifacts(
     artifacts_dir = settings.artifacts_root / job_id
     artifacts_dir.mkdir(parents=True, exist_ok=True)
 
-    # 1. Patch artifact
     patch_file = artifacts_dir / f"patch_{job_id}.patch"
     patch_file.write_text(diff_text, encoding="utf-8")
     patch_hash = patch_applier.hash_patch(diff_text)
@@ -369,7 +391,6 @@ def _create_and_save_artifacts(
         (str(uuid.uuid4()), job_id, str(patch_file), patch_hash, patch_size, _utc_now(), _utc_now()),
     )
 
-    # 2. Patched ZIP artifact
     zip_path = artifacts_dir / f"patched_project_{job_id}.zip"
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
         for p in working_copy_dir.rglob("*"):

@@ -1,0 +1,166 @@
+"""Unit tests for nebius_client with mocked HTTP responses (zero credits consumed)."""
+import json
+import pytest
+import httpx
+
+from app.core.config import settings
+from app.core.errors import ErrorCode, ProofPatchError
+from app.schemas.api import RepairPlan
+from app.services import nebius_client
+from app.services.model_registry import ModelRole
+
+
+def test_call_model_success_with_mock(monkeypatch):
+    monkeypatch.setattr(settings, "nebius_api_key", "test-key-mock")
+    monkeypatch.setattr(settings, "nebius_model_reasoning", "nvidia/nemotron-mock")
+
+    mock_response = {
+        "choices": [{
+            "message": {"content": "{\"status\": \"ok\"}"}
+        }],
+        "usage": {"prompt_tokens": 10, "completion_tokens": 5}
+    }
+
+    def mock_post(*args, **kwargs):
+        assert kwargs["headers"]["Authorization"] == "Bearer test-key-mock"
+        req = httpx.Request("POST", "https://api.tokenfactory.nebius.com/v1/chat/completions")
+        return httpx.Response(200, json=mock_response, request=req)
+
+    monkeypatch.setattr(httpx.Client, "post", mock_post)
+
+    content, model_id = nebius_client.call_model("system prompt", "user prompt", role=ModelRole.REASONING)
+    assert content == "{\"status\": \"ok\"}"
+    assert model_id == "nvidia/nemotron-mock"
+
+
+def test_call_model_rate_limit_error(monkeypatch):
+    monkeypatch.setattr(settings, "nebius_api_key", "test-key-mock")
+    monkeypatch.setattr(settings, "nebius_model_fast", "nvidia/nemotron-fast")
+    monkeypatch.setattr(nebius_client.time, "sleep", lambda _: None)
+
+    def mock_post(*args, **kwargs):
+        req = httpx.Request("POST", "https://api.tokenfactory.nebius.com/v1/chat/completions")
+        return httpx.Response(429, json={"error": "rate limit"}, request=req)
+
+    monkeypatch.setattr(httpx.Client, "post", mock_post)
+
+    with pytest.raises(ProofPatchError) as exc_info:
+        nebius_client.call_model("sys", "user", role=ModelRole.FAST)
+
+    assert exc_info.value.code == ErrorCode.PROVIDER_RATE_LIMIT
+
+
+def test_call_model_timeout_is_reported(monkeypatch):
+    monkeypatch.setattr(settings, "nebius_api_key", "test-key-mock")
+    monkeypatch.setattr(settings, "nebius_model_fast", "fast-model")
+    monkeypatch.setattr(nebius_client.time, "sleep", lambda _: None)
+    attempts = 0
+
+    def mock_post(self, url, **kwargs):
+        nonlocal attempts
+        attempts += 1
+        raise httpx.ReadTimeout("simulated timeout")
+
+    monkeypatch.setattr(httpx.Client, "post", mock_post)
+    with pytest.raises(ProofPatchError) as exc_info:
+        nebius_client.call_model("system prompt", "user prompt", role=ModelRole.FAST)
+
+    assert exc_info.value.code == ErrorCode.PROVIDER_TIMEOUT
+    assert attempts == nebius_client._MAX_PROVIDER_RETRIES
+
+
+def test_call_model_provider_error_is_reported(monkeypatch):
+    monkeypatch.setattr(settings, "nebius_api_key", "test-key-mock")
+    monkeypatch.setattr(settings, "nebius_model_fast", "fast-model")
+    monkeypatch.setattr(nebius_client.time, "sleep", lambda _: None)
+
+    def mock_post(self, url, **kwargs):
+        request = httpx.Request("POST", url)
+        return httpx.Response(503, json={"error": "unavailable"}, request=request)
+
+    monkeypatch.setattr(httpx.Client, "post", mock_post)
+    with pytest.raises(ProofPatchError) as exc_info:
+        nebius_client.call_model("system prompt", "user prompt", role=ModelRole.FAST)
+
+    assert exc_info.value.code == ErrorCode.PROVIDER_TIMEOUT
+
+
+def test_call_model_falls_back_on_unavailable_model_and_reports_actual_model(monkeypatch):
+    monkeypatch.setattr(settings, "nebius_api_key", "test-key-mock")
+    monkeypatch.setattr(settings, "nebius_model_reasoning", "missing-model")
+    monkeypatch.setattr(settings, "nebius_model_fast", "fast-model")
+    monkeypatch.setattr(settings, "nebius_model_fallback_roles", ["fast"])
+    monkeypatch.setattr(nebius_client.model_registry, "_cached_catalog", None)
+    requested_models = []
+
+    def mock_post(self, url, *, headers, json):
+        requested_models.append(json["model"])
+        request = httpx.Request("POST", url)
+        if json["model"] == "missing-model":
+            return httpx.Response(404, json={"error": "not found"}, request=request)
+        return httpx.Response(
+            200,
+            json={
+                "model": "provider-actual-fast-model",
+                "choices": [{"message": {"content": "ok"}}],
+            },
+            request=request,
+        )
+
+    monkeypatch.setattr(httpx.Client, "post", mock_post)
+    content, model_id = nebius_client.call_model("system prompt", "private source", role=ModelRole.REASONING)
+
+    assert requested_models == ["missing-model", "fast-model"]
+    assert content == "ok"
+    assert model_id == "provider-actual-fast-model"
+
+
+def test_call_model_rejects_empty_content(monkeypatch):
+    monkeypatch.setattr(settings, "nebius_api_key", "test-key-mock")
+    monkeypatch.setattr(settings, "nebius_model_fast", "fast-model")
+
+    def mock_post(self, url, **kwargs):
+        request = httpx.Request("POST", url)
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": ""}}]},
+            request=request,
+        )
+
+    monkeypatch.setattr(httpx.Client, "post", mock_post)
+    with pytest.raises(ProofPatchError) as exc_info:
+        nebius_client.call_model("system prompt", "user prompt", role=ModelRole.FAST)
+
+    assert exc_info.value.code == ErrorCode.MODEL_OUTPUT_INVALID
+
+
+def test_generate_plan_schema_validation(monkeypatch):
+    monkeypatch.setattr(settings, "nebius_api_key", "test-key-mock")
+    monkeypatch.setattr(settings, "nebius_model_reasoning", "nvidia/nemotron-mock")
+
+    valid_plan = {
+        "summary": "Fix calculation bug",
+        "diagnosis_hypothesis": "Off by logic error in negation",
+        "target_files": ["src/calc.py"],
+        "planned_changes": [
+            {"file": "src/calc.py", "change": "return -n if n < 0 else n", "reason": "handle negative"}
+        ],
+        "risks": ["minor regression risk"],
+        "verification_strategy": ["run pytest"]
+    }
+
+    def mock_post(*args, **kwargs):
+        req = httpx.Request("POST", "https://api.tokenfactory.nebius.com/v1/chat/completions")
+        return httpx.Response(200, json={"choices": [{"message": {"content": json.dumps(valid_plan)}}]}, request=req)
+
+    monkeypatch.setattr(httpx.Client, "post", mock_post)
+
+    dummy_context = {
+        "repo_summary": {"python_files": 1, "test_files": 1, "included_in_context": 1},
+        "relevant_files": [{"rel_path": "src/calc.py", "content": "def f(): pass", "truncated": False}]
+    }
+
+    plan, model_id = nebius_client.generate_plan(dummy_context, "Bug in calculation")
+    assert isinstance(plan, RepairPlan)
+    assert plan.target_files == ["src/calc.py"]
+    assert model_id == "nvidia/nemotron-mock"

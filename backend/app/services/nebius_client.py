@@ -1,7 +1,7 @@
 """Nebius Token Factory provider adapter.
 
-Encapsulates endpoint, auth, model ID, request settings, and error mapping.
-Never logs or returns the API key.
+Encapsulates endpoint, auth, role-based model selection, request settings, and error mapping.
+Never logs or returns the API key or raw source content.
 Uses the OpenAI-compatible REST API directly via httpx.
 """
 from __future__ import annotations
@@ -10,17 +10,18 @@ import json
 import logging
 import re
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 import httpx
 
 from app.core.config import settings
 from app.core.errors import ErrorCode, ProofPatchError
 from app.schemas.api import PatchProposal, RepairPlan
+from app.services.model_registry import ModelRole, model_registry
 
 logger = logging.getLogger(__name__)
 
-PROMPT_VERSION = "repair-v1"
+PROMPT_VERSION = "repair-v2-multirole"
 
 # Generation parameters — low variance for deterministic repairs
 _GENERATION_PARAMS: Dict[str, Any] = {
@@ -40,26 +41,33 @@ def _build_headers() -> Dict[str, str]:
     }
 
 
-def _call_model(
+def call_model(
     system_prompt: str,
     user_prompt: str,
+    role: ModelRole = ModelRole.FAST,
     job_id: Optional[str] = None,
-) -> str:
+) -> Tuple[str, str]:
     """
-    Call the Nebius Token Factory chat completions endpoint.
-    Returns the raw assistant message content.
-    Raises ProofPatchError on any provider failure.
+    Call the Nebius Token Factory chat completions endpoint using the specified model role.
+
+    Returns:
+        (assistant_content, model_id_used)
+
+    Raises:
+        ProofPatchError on any provider failure.
     """
     if not settings.has_nebius_config:
         raise ProofPatchError(
             code=ErrorCode.PROVIDER_AUTH_ERROR,
-            message="Model provider is not configured. Set NEBIUS_API_KEY and NEBIUS_MODEL.",
+            message="Model provider is not configured. Set NEBIUS_API_KEY and model configuration.",
             http_status=503,
         )
 
+    model_id, resolved_role, is_fallback = model_registry.select_model(role=role)
+    requested_model_id = model_id
     url = f"{settings.nebius_base_url.rstrip('/')}/chat/completions"
     payload = {
-        "model": settings.nebius_model,
+        "model": model_id,
         "messages": [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
@@ -67,94 +75,142 @@ def _call_model(
         **_GENERATION_PARAMS,
     }
 
-    last_exc: Optional[Exception] = None
-    for attempt in range(_MAX_PROVIDER_RETRIES):
-        if attempt > 0:
-            time.sleep(2 ** attempt)  # simple backoff: 2s, 4s
+    last_error: Optional[ProofPatchError] = None
+    attempt = 0
+    fallback_attempted = False
+    while attempt < _MAX_PROVIDER_RETRIES:
+        if attempt:
+            time.sleep(2 ** attempt)
+        payload["model"] = model_id
 
         try:
             with httpx.Client(timeout=settings.provider_timeout_seconds) as client:
-                resp = client.post(url, headers=_build_headers(), json=payload)
+                response = client.post(url, headers=_build_headers(), json=payload)
         except httpx.TimeoutException:
-            logger.warning("Provider call timed out (job=%s, attempt=%d)", job_id, attempt + 1)
-            last_exc = ProofPatchError(
+            logger.warning("Model request outcome=timeout job=%s role=%s model_id=%s attempt=%d", job_id, resolved_role.value, model_id, attempt + 1)
+            last_error = ProofPatchError(
                 code=ErrorCode.PROVIDER_TIMEOUT,
                 message="The model provider did not respond in time.",
                 http_status=504,
             )
+            attempt += 1
             continue
-        except httpx.RequestError as exc:
-            logger.warning("Provider network error: %s (job=%s)", type(exc).__name__, job_id)
-            last_exc = ProofPatchError(
+        except httpx.RequestError:
+            logger.warning("Model request outcome=network_error job=%s role=%s model_id=%s attempt=%d", job_id, resolved_role.value, model_id, attempt + 1)
+            last_error = ProofPatchError(
                 code=ErrorCode.PROVIDER_TIMEOUT,
                 message="Could not reach the model provider.",
                 http_status=503,
             )
+            attempt += 1
             continue
 
-        if resp.status_code == 401 or resp.status_code == 403:
+        if response.status_code in (401, 403):
+            logger.warning("Model request outcome=authentication_error job=%s role=%s model_id=%s status=%d", job_id, resolved_role.value, model_id, response.status_code)
             raise ProofPatchError(
                 code=ErrorCode.PROVIDER_AUTH_ERROR,
                 message="Authentication with the model provider failed.",
                 http_status=503,
             )
-        if resp.status_code == 429:
-            logger.warning("Provider rate limit (job=%s)", job_id)
-            last_exc = ProofPatchError(
+        if response.status_code == 404:
+            if fallback_attempted:
+                logger.warning("Model request outcome=model_unavailable job=%s role=%s model_id=%s", job_id, resolved_role.value, model_id)
+                raise ProofPatchError(
+                    code=ErrorCode.MODEL_UNAVAILABLE,
+                    message="The configured model and its allowed fallbacks are unavailable.",
+                    http_status=503,
+                )
+            try:
+                model_id, resolved_role, is_fallback = model_registry.select_model(role=role, exclude={model_id})
+            except ProofPatchError as exc:
+                logger.warning("Model request outcome=model_unavailable job=%s role=%s model_id=%s", job_id, role.value, requested_model_id)
+                raise ProofPatchError(
+                    code=ErrorCode.MODEL_UNAVAILABLE,
+                    message="The configured model is unavailable and no allowed fallback is available.",
+                    http_status=503,
+                ) from exc
+            logger.warning(
+                "Model fallback selected: requested_model_id=%s fallback_model_id=%s fallback_role=%s",
+                requested_model_id,
+                model_id,
+                resolved_role.value,
+            )
+            fallback_attempted = True
+            attempt = 0
+            continue
+        if response.status_code == 429:
+            logger.warning("Model request outcome=rate_limited job=%s role=%s model_id=%s attempt=%d", job_id, resolved_role.value, model_id, attempt + 1)
+            last_error = ProofPatchError(
                 code=ErrorCode.PROVIDER_RATE_LIMIT,
                 message="The model provider is rate-limiting requests. Please try again later.",
                 http_status=429,
                 details={"retryable": True},
             )
+            attempt += 1
             continue
-        if resp.status_code >= 500:
-            logger.warning("Provider server error %d (job=%s)", resp.status_code, job_id)
-            last_exc = ProofPatchError(
+        if response.status_code >= 500:
+            logger.warning("Model request outcome=provider_error job=%s role=%s model_id=%s status=%d attempt=%d", job_id, resolved_role.value, model_id, response.status_code, attempt + 1)
+            last_error = ProofPatchError(
                 code=ErrorCode.PROVIDER_TIMEOUT,
                 message="The model provider returned a server error.",
                 http_status=502,
             )
+            attempt += 1
             continue
-        if not resp.is_success:
+        if not response.is_success:
+            logger.warning("Model request outcome=http_error job=%s role=%s model_id=%s status=%d", job_id, resolved_role.value, model_id, response.status_code)
             raise ProofPatchError(
                 code=ErrorCode.PROVIDER_TIMEOUT,
-                message=f"The model provider returned an unexpected response.",
+                message="The model provider returned an unexpected response.",
                 http_status=502,
             )
 
         try:
-            data = resp.json()
-            content = data["choices"][0]["message"]["content"]
-            # Log token usage safely (no content)
+            data = response.json()
+            message = data["choices"][0]["message"]
+            content = message.get("content")
+            if not isinstance(content, str) or not content.strip():
+                raise ValueError("empty model content")
+            actual_model_id = data.get("model")
+            if not isinstance(actual_model_id, str) or not actual_model_id:
+                actual_model_id = model_id
             usage = data.get("usage", {})
             logger.info(
-                "Model call success (job=%s, tokens_prompt=%s, tokens_completion=%s)",
+                "Model request outcome=success job=%s requested_role=%s resolved_role=%s selected_model_id=%s actual_model_id=%s fallback=%s prompt_tokens=%s completion_tokens=%s",
                 job_id,
-                usage.get("prompt_tokens", "?"),
-                usage.get("completion_tokens", "?"),
+                role.value,
+                resolved_role.value,
+                model_id,
+                actual_model_id,
+                is_fallback,
+                usage.get("prompt_tokens", "?") if isinstance(usage, dict) else "?",
+                usage.get("completion_tokens", "?") if isinstance(usage, dict) else "?",
             )
-            return content
-        except (KeyError, IndexError, ValueError) as exc:
+            return content, actual_model_id
+        except (KeyError, IndexError, TypeError, ValueError, AttributeError):
+            logger.warning("Model request outcome=malformed_output job=%s role=%s model_id=%s", job_id, resolved_role.value, model_id)
             raise ProofPatchError(
                 code=ErrorCode.MODEL_OUTPUT_INVALID,
                 message="The model provider returned an unexpected response structure.",
                 http_status=502,
             )
 
-    raise last_exc  # type: ignore[misc]
+    if last_error is None:
+        last_error = ProofPatchError(
+            code=ErrorCode.PROVIDER_TIMEOUT,
+            message="The model provider request failed.",
+            http_status=502,
+        )
+    logger.warning("Model request outcome=failed job=%s role=%s model_id=%s error_code=%s", job_id, resolved_role.value, model_id, last_error.code)
+    raise last_error
 
 
 def _extract_json_from_response(content: str) -> dict:
-    """
-    Extract a JSON object from a model response that may contain markdown
-    code fences or prose around the JSON.
-    """
-    # Try to find a JSON block in markdown fences
+    """Extract a JSON object from a model response that may contain markdown fences or surrounding text."""
     fence_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", content, re.DOTALL)
     if fence_match:
         raw = fence_match.group(1)
     else:
-        # Try to find the first '{' and last '}' as a JSON object
         start = content.find("{")
         end = content.rfind("}")
         if start == -1 or end == -1 or end <= start:
@@ -167,7 +223,7 @@ def _extract_json_from_response(content: str) -> dict:
 
     try:
         return json.loads(raw)
-    except json.JSONDecodeError as exc:
+    except (json.JSONDecodeError, TypeError):
         raise ProofPatchError(
             code=ErrorCode.MODEL_OUTPUT_INVALID,
             message="The model returned malformed JSON.",
@@ -206,8 +262,9 @@ def generate_plan(
     expected_behavior: Optional[str] = None,
     observed_behavior: Optional[str] = None,
     job_id: Optional[str] = None,
-) -> RepairPlan:
-    """Call the model to generate a structured repair plan."""
+    role: ModelRole = ModelRole.REASONING,
+) -> Tuple[RepairPlan, str]:
+    """Call the model to generate a structured repair plan. Returns (plan, model_id)."""
     file_context = "\n\n".join(
         f"=== FILE: {f['rel_path']} ===\n{f['content']}"
         + (" [TRUNCATED]" if f["truncated"] else "")
@@ -229,20 +286,20 @@ Source files:
 
 Produce the repair plan JSON now."""
 
-    raw = _call_model(_PLAN_SYSTEM, user_prompt, job_id=job_id)
+    raw, model_id = call_model(_PLAN_SYSTEM, user_prompt, role=role, job_id=job_id)
     data = _extract_json_from_response(raw)
 
     try:
         plan = RepairPlan.model_validate(data)
-    except Exception as exc:
-        logger.warning("Plan schema validation failed: %s", exc)
+    except Exception:
+        logger.warning("Plan schema validation failed: outcome=invalid_schema")
         raise ProofPatchError(
             code=ErrorCode.MODEL_OUTPUT_INVALID,
             message="The repair plan did not match the required schema.",
             http_status=502,
         )
 
-    return plan
+    return plan, model_id
 
 
 # ── Patch generation ──────────────────────────────────────────────────────────
@@ -274,8 +331,9 @@ def generate_patch(
     context: dict,
     plan: RepairPlan,
     job_id: Optional[str] = None,
-) -> PatchProposal:
-    """Call the model to generate a patch based on the repair plan."""
+    role: ModelRole = ModelRole.REASONING,
+) -> Tuple[PatchProposal, str]:
+    """Call the model to generate a patch based on the repair plan. Returns (proposal, model_id)."""
     file_context = "\n\n".join(
         f"=== FILE: {f['rel_path']} ===\n{f['content']}"
         for f in context["relevant_files"]
@@ -296,20 +354,20 @@ Source files:
 
 Generate the unified diff patch JSON now."""
 
-    raw = _call_model(_PATCH_SYSTEM, user_prompt, job_id=job_id)
+    raw, model_id = call_model(_PATCH_SYSTEM, user_prompt, role=role, job_id=job_id)
     data = _extract_json_from_response(raw)
 
     try:
         proposal = PatchProposal.model_validate(data)
-    except Exception as exc:
-        logger.warning("Patch schema validation failed: %s", exc)
+    except Exception:
+        logger.warning("Patch schema validation failed: outcome=invalid_schema")
         raise ProofPatchError(
             code=ErrorCode.MODEL_OUTPUT_INVALID,
             message="The generated patch did not match the required schema.",
             http_status=502,
         )
 
-    return proposal
+    return proposal, model_id
 
 
 # ── Patch revision (retry) ────────────────────────────────────────────────────
@@ -340,9 +398,9 @@ def revise_patch(
     context: dict,
     plan: RepairPlan,
     job_id: Optional[str] = None,
-) -> PatchProposal:
-    """Call the model to revise a patch based on test failure output."""
-    # Truncate test output sent to model
+    role: ModelRole = ModelRole.ADVANCED,
+) -> Tuple[PatchProposal, str]:
+    """Call the model to revise a patch based on test failure output. Returns (proposal, model_id)."""
     max_chars = 3000
     stdout_snippet = test_stdout[:max_chars] if test_stdout else "(empty)"
     stderr_snippet = test_stderr[:max_chars] if test_stderr else "(empty)"
@@ -371,17 +429,17 @@ Repair plan summary: {plan.summary}
 
 Produce a revised patch JSON now."""
 
-    raw = _call_model(_REVISE_SYSTEM, user_prompt, job_id=job_id)
+    raw, model_id = call_model(_REVISE_SYSTEM, user_prompt, role=role, job_id=job_id)
     data = _extract_json_from_response(raw)
 
     try:
         proposal = PatchProposal.model_validate(data)
-    except Exception as exc:
-        logger.warning("Revised patch schema validation failed: %s", exc)
+    except Exception:
+        logger.warning("Revised patch schema validation failed: outcome=invalid_schema")
         raise ProofPatchError(
             code=ErrorCode.MODEL_OUTPUT_INVALID,
             message="The revised patch did not match the required schema.",
             http_status=502,
         )
 
-    return proposal
+    return proposal, model_id

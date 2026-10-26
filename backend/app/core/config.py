@@ -7,7 +7,10 @@ import os
 from pathlib import Path
 from typing import List
 
+from dotenv import load_dotenv
 from pydantic import BaseModel, Field
+
+load_dotenv()
 
 
 def _get_list(env_key: str, default: List[str]) -> List[str]:
@@ -18,10 +21,21 @@ def _get_list(env_key: str, default: List[str]) -> List[str]:
 
 
 class Settings(BaseModel):
-    # ── Nebius / Model ────────────────────────────────────────────────────────
+    # ── Nebius / Models ───────────────────────────────────────────────────────
     nebius_api_key: str = Field(default_factory=lambda: os.getenv("NEBIUS_API_KEY", ""))
-    nebius_base_url: str = Field(default_factory=lambda: os.getenv("NEBIUS_BASE_URL", "https://api.studio.nebius.ai/v1"))
+    nebius_base_url: str = Field(default_factory=lambda: os.getenv("NEBIUS_BASE_URL", "https://api.tokenfactory.nebius.com/v1"))
+
+    # Legacy single-model variable remains as a migration fallback.
     nebius_model: str = Field(default_factory=lambda: os.getenv("NEBIUS_MODEL", ""))
+
+    # Role-based models and explicit, non-advanced fallback order.
+    nebius_model_fast: str = Field(default_factory=lambda: os.getenv("NEBIUS_MODEL_FAST", ""))
+    nebius_model_reasoning: str = Field(default_factory=lambda: os.getenv("NEBIUS_MODEL_REASONING", ""))
+    nebius_model_advanced: str = Field(default_factory=lambda: os.getenv("NEBIUS_MODEL_ADVANCED", ""))
+    nebius_model_fallback_roles: List[str] = Field(
+        default_factory=lambda: _get_list("NEBIUS_MODEL_FALLBACK_ROLES", ["reasoning", "fast"])
+    )
+
     provider_timeout_seconds: int = Field(default_factory=lambda: int(os.getenv("PROVIDER_TIMEOUT_SECONDS", "60")))
 
     # ── Sandbox ───────────────────────────────────────────────────────────────
@@ -73,7 +87,8 @@ class Settings(BaseModel):
 
     @property
     def has_nebius_config(self) -> bool:
-        return bool(self.nebius_api_key and self.nebius_model)
+        has_any_model = bool(self.nebius_model or self.nebius_model_fast or self.nebius_model_reasoning or self.nebius_model_advanced)
+        return bool(self.nebius_api_key and has_any_model)
 
 
 settings = Settings()
