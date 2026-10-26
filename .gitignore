@@ -1,0 +1,65 @@
+# ─── Secrets and environment ──────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+
+# ─── Python ───────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pyc
+*.egg
+*.egg-info/
+dist/
+build/
+*.so
+.Python
+env/
+venv/
+.venv/
+pip-wheel-metadata/
+*.dist-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+coverage.xml
+*.cover
+
+# ─── Node / Frontend ──────────────────────────────────────────────────────────
+node_modules/
+dist/
+.next/
+out/
+.nuxt/
+.svelte-kit/
+*.tsbuildinfo
+
+# ─── Database ─────────────────────────────────────────────────────────────────
+*.db
+*.sqlite
+*.sqlite3
+
+# ─── ProofPatch runtime workspaces ───────────────────────────────────────────
+backend/workspaces/
+backend/uploads/
+backend/artifacts/
+backend/logs/
+
+# ─── Uploaded source fixtures (only committed as checked-in demo repos) ──────
+*.zip
+!tests/fixtures/**/*.zip
+
+# ─── OS / editor ──────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# ─── Jupyter ──────────────────────────────────────────────────────────────────
+.ipynb_checkpoints/
