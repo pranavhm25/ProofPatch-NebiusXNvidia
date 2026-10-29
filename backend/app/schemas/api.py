@@ -41,6 +41,7 @@ class FinalVerdict(str, Enum):
 
 
 class TestStatus(str, Enum):
+    __test__ = False
     PASSED = "PASSED"
     FAILED = "FAILED"
     TIMED_OUT = "TIMED_OUT"
@@ -115,6 +116,7 @@ class JobStatusResponse(BaseModel):
 # ── Result ────────────────────────────────────────────────────────────────────
 
 class TestResultSchema(BaseModel):
+    __test__ = False
     status: TestStatus
     command_id: str
     exit_code: Optional[int]
