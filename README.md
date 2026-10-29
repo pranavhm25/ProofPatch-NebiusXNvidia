@@ -139,13 +139,20 @@ Contains a known off-by-logic bug in `absolute_value(-15) == 15` ready for demon
 
 ---
 
-## 6. Security Boundaries
+## 6. Security Boundaries & Isolation Truths
 
-- **Untrusted Source Code:** Uploaded archives are treated as untrusted data. Directory traversal, decompression bombs, and absolute paths are rejected.
-- **Environment Scrubbing:** Test execution subprocesses scrub all environment variables starting with `NEBIUS`, `TOKEN`, `KEY`, `SECRET`, and `API_KEY`.
-- **Ephemeral Storage:** Workspaces and artifacts are scheduled for deletion after 60 minutes.
-- **Zero Host Writes:** Patches are applied strictly inside disposable working copies; the baseline upload remains immutable.
+### What is Isolated & Enforced
+- **Untrusted Archive Handling:** Uploaded .zip archives are treated as untrusted input. Directory traversal (..), absolute paths, NUL bytes, decompression bombs (>500 files, >100 MB uncompressed), and symlinks are rejected. Secret files and cache directories are excluded from context manifests.
+- **Environment Variable Scrubbing:** Execution subprocesses run with a strict OS allowlist (PATH, TEMP, HOME, etc.). All sensitive variables matching prefixes (NEBIUS, OPENAI, ANTHROPIC, AWS, GOOGLE_, SECRET, TOKEN, KEY, DATABASE, GITHUB_, HF_, etc.) or exact secret names are scrubbed.
+- **Execution Deadlines:** Every test run is bounded by a hard wall-clock timeout (SANDBOX_TIMEOUT_SECONDS, default 60s), and the entire job is governed by JOB_TIMEOUT_SECONDS (default 300s).
+- **Log Flooding Protection:** Output capture is capped to MAX_LOG_BYTES (default 50 KB) to prevent log buffer exhaustion.
+- **Zero Baseline Writes:** Patches are applied strictly to disposable working copies; failures discard the copy and leave the baseline upload immutable.
+- **POSIX Resource Limits:** On Linux/POSIX systems, address space (RLIMIT_AS) and CPU time (RLIMIT_CPU) limits are applied where supported via setrlimit.
 
+### What is NOT Isolated (Known Limitations)
+- **No Network Isolation:** Subprocesses share the host network stack; outbound network egress is NOT blocked (no network namespace or packet filtering).
+- **No Container / Chroot Jail:** The local_process sandbox executes directly on the host operating system with the permissions of the backend process user. It does not provide container or namespace virtualization.
+- **Non-POSIX Platforms:** On Windows hosts, POSIX RLIMIT_* limits are unavailable; execution relies on wall-clock timeout and environment scrubbing.
 ---
 
 ## 7. License

@@ -1,75 +1,116 @@
 """Sandbox adapter — isolated subprocess execution.
 
-The 'local_process' implementation runs pytest in a tightly constrained
-subprocess. Docker is not available, so isolation is achieved via:
+The 'local_process' implementation runs pytest in a constrained subprocess.
+Isolation controls implemented:
   - A temporary working directory containing only the patched working copy.
-  - Environment variable scrubbing (no Nebius key or host secrets passed in).
-  - Resource limits via RLIMIT_* where supported (Linux only).
+  - Minimal environment scrubbing (all known API keys, tokens, and secrets removed).
+  - Resource limits via RLIMIT_* where supported (Linux/POSIX only).
   - Hard wall-clock timeout via subprocess timeout.
-  - Bounded stdout/stderr capture.
-  - Non-shell execution (no shell=True, no user-controlled command strings).
+  - Bounded stdout/stderr capture (capped to MAX_LOG_BYTES).
+  - Non-shell execution (no shell=True, fixed allowlisted command).
 
-LIMITATION (documented per TRD §9):
-  Without Docker/container isolation, this runner does NOT provide:
-  - Process count limits (no cgroups).
-  - Network egress blocking (no network namespace).
-  - Filesystem mount isolation.
-  This is documented as a known limitation. The uploaded code still runs in a
-  temporary directory with no application secrets in the environment.
+LIMITATIONS & TRUTHFUL DISCLOSURES:
+  - This implementation does NOT provide network isolation (no network namespaces/chroot).
+  - This implementation does NOT provide container/jail isolation. Untrusted code
+    executes as the host process user.
+  - On non-POSIX systems (e.g. Windows), POSIX resource limits (RLIMIT_*) are unavailable;
+    execution falls back to wall-clock timeout only.
 """
 from __future__ import annotations
 
 import logging
 import os
-import resource
+import shutil
 import subprocess
+import sys
 import time
 from pathlib import Path
 from typing import Optional
+
+# Guard Unix-only resource import
+if os.name == "posix":
+    try:
+        import resource
+    except ImportError:
+        resource = None
+else:
+    resource = None
 
 from app.core.config import settings
 from app.core.errors import ErrorCode, ProofPatchError
 
 logger = logging.getLogger(__name__)
 
-# Approved command template — user cannot modify this
-_APPROVED_COMMAND = ["python3", "-m", "pytest", "--tb=short", "-q"]
+# Approved command template — user cannot modify this.
+# Resolves python executable with pytest available.
+_PYTHON_EXE = sys.executable if sys.executable else "python3"
+_APPROVED_COMMAND = [_PYTHON_EXE, "-m", "pytest", "--tb=short", "-q"]
 
 # Environment variables to scrub from subprocess environment
-_SCRUB_ENV_PREFIXES = ("NEBIUS", "OPENAI", "ANTHROPIC", "AWS", "GOOGLE_", "SECRET", "TOKEN", "KEY")
+_SCRUB_ENV_PREFIXES = (
+    "NEBIUS", "OPENAI", "ANTHROPIC", "AWS", "GOOGLE_", "SECRET", "TOKEN", "KEY",
+    "AZURE", "HF_", "HUGGINGFACE", "GITHUB_", "GITLAB_", "DATABASE", "DB_",
+)
+
+_SCRUB_EXACT = frozenset({
+    "API_KEY", "PASSWORD", "SECRET", "TOKEN", "CREDENTIALS",
+    "ACCESS_KEY", "SECRET_KEY", "AUTH_TOKEN",
+})
+
+# Allowlist of standard operating system environment variables required to run Python/pytest
+_SAFE_ENV_ALLOWLIST = frozenset({
+    # Common
+    "PATH", "PYTHONPATH", "PYTHONHOME", "LANG", "LC_ALL", "LC_CTYPE", "TERM",
+    # Linux / POSIX
+    "HOME", "TMPDIR", "TZ", "USER", "LOGNAME",
+    # Windows
+    "SYSTEMROOT", "WINDIR", "COMSPEC", "PATHEXT", "TEMP", "TMP", "USERPROFILE",
+    "HOMEDRIVE", "HOMEPATH", "SYSTEMDRIVE", "PROGRAMFILES", "PROGRAMFILES(X86)",
+    "COMMONPROGRAMFILES", "APPDATA", "LOCALAPPDATA",
+})
 
 # Output size limits
 _MAX_CAPTURE_BYTES = min(settings.max_log_bytes, 1024 * 1024)
 
 
 def _safe_environ() -> dict:
-    """Return a clean environment dict with secrets removed."""
+    """Return a minimal clean environment dict with secrets removed."""
     env = {}
     for k, v in os.environ.items():
         upper = k.upper()
+        # Only retain necessary OS runtime variables
+        if upper not in _SAFE_ENV_ALLOWLIST:
+            continue
+        # Drop secret prefixes and exact matches
         if any(upper.startswith(prefix) for prefix in _SCRUB_ENV_PREFIXES):
             continue
-        if upper in ("API_KEY", "PASSWORD", "SECRET", "TOKEN", "CREDENTIALS"):
+        if upper in _SCRUB_EXACT:
             continue
         env[k] = v
-    # Ensure PATH is present for finding python3/pytest
+
+    # Ensure PATH is present for finding binaries
     if "PATH" not in env:
-        env["PATH"] = "/usr/bin:/usr/local/bin:/bin"
+        env["PATH"] = os.environ.get("PATH", "/usr/bin:/usr/local/bin:/bin")
     return env
 
 
 def _set_resource_limits() -> None:
-    """Set CPU and address space limits where supported (Linux only)."""
+    """Set CPU and address space limits where supported (Linux/POSIX only)."""
+    if resource is None:
+        return
     try:
         # CPU time limit (seconds)
-        resource.setrlimit(resource.RLIMIT_CPU, (settings.sandbox_timeout_seconds, settings.sandbox_timeout_seconds + 5))
-    except (AttributeError, ValueError, resource.error):
+        resource.setrlimit(
+            resource.RLIMIT_CPU,
+            (settings.sandbox_timeout_seconds, settings.sandbox_timeout_seconds + 5),
+        )
+    except (AttributeError, ValueError, OSError):
         pass
     try:
         # Virtual memory limit: 512 MB
         mem_limit = 512 * 1024 * 1024
         resource.setrlimit(resource.RLIMIT_AS, (mem_limit, mem_limit))
-    except (AttributeError, ValueError, resource.error):
+    except (AttributeError, ValueError, OSError):
         pass
 
 
@@ -117,19 +158,32 @@ def run_tests(working_copy_path: Path, job_id: Optional[str] = None) -> SandboxR
     env = _safe_environ()
     cmd = _APPROVED_COMMAND
 
+    # Configure platform-specific preexec limits
+    preexec = None
+    if os.name == "posix" and resource is not None:
+        preexec = _set_resource_limits
+    else:
+        logger.warning(
+            "Resource limits (RLIMIT_*) are unavailable on platform '%s' (os.name='%s'); falling back to timeout-only execution.",
+            sys.platform,
+            os.name,
+        )
+
     logger.info("Sandbox run start (job=%s, path=%s)", job_id, working_copy_path.name)
     start = time.monotonic()
 
     try:
-        proc = subprocess.run(
-            cmd,
-            cwd=str(working_copy_path),
-            capture_output=True,
-            timeout=settings.sandbox_timeout_seconds,
-            env=env,
-            preexec_fn=_set_resource_limits,  # Linux only, no-op on error
-            shell=False,
-        )
+        kwargs = {
+            "cwd": str(working_copy_path),
+            "capture_output": True,
+            "timeout": settings.sandbox_timeout_seconds,
+            "env": env,
+            "shell": False,
+        }
+        if preexec is not None:
+            kwargs["preexec_fn"] = preexec
+
+        proc = subprocess.run(cmd, **kwargs)
         elapsed_ms = int((time.monotonic() - start) * 1000)
         timed_out = False
         exit_code = proc.returncode
