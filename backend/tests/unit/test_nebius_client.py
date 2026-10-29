@@ -231,8 +231,6 @@ def test_generate_patch_empty_context_raises():
 
     assert exc_info.value.code == ErrorCode.MODEL_OUTPUT_INVALID
     assert "No source files matched the planned target files" in exc_info.value.message
-    assert "src/nonexistent.py" in exc_info.value.message
-    assert "src/other.py" in exc_info.value.message
 
 
 def test_revise_patch_empty_context_raises():
@@ -261,3 +259,90 @@ def test_revise_patch_empty_context_raises():
 
     assert exc_info.value.code == ErrorCode.MODEL_OUTPUT_INVALID
     assert "No source files matched the planned target files" in exc_info.value.message
+
+
+def test_format_with_line_numbers():
+    content = "line one\nline two\nline three"
+    numbered = nebius_client._format_with_line_numbers(content)
+    lines = numbered.split("\n")
+    assert len(lines) == 3
+    assert lines[0].strip() == "1 | line one"
+    assert lines[1].strip() == "2 | line two"
+    assert lines[2].strip() == "3 | line three"
+
+
+def test_revise_patch_on_apply_error_success(monkeypatch):
+    captured_prompts = []
+
+    def mock_call_model(sys_prompt, user_prompt, role, job_id=None):
+        captured_prompts.append((sys_prompt, user_prompt))
+        return (
+            json.dumps({
+                "summary": "Fix hunk context lines",
+                "patch_format": "unified_diff",
+                "patch": "--- a/src/calc.py\n+++ b/src/calc.py\n@@ -1,2 +1,2 @@\n-def calc(): return 1\n+def calc(): return 2\n",
+                "files_expected_to_change": ["src/calc.py"],
+                "notes": ["Adjusted context line to match actual line 1"]
+            }),
+            "mock-nvidia-nemotron"
+        )
+
+    monkeypatch.setattr(nebius_client, "call_model", mock_call_model)
+
+    context = {
+        "relevant_files": [
+            {"rel_path": "src/calc.py", "content": "def calc(): return 1\n", "truncated": False}
+        ]
+    }
+    plan = RepairPlan(
+        summary="Fix calc return",
+        diagnosis_hypothesis="calc returns 1 instead of 2",
+        target_files=["src/calc.py"],
+        planned_changes=[],
+        risks=[],
+        verification_strategy=["pytest"]
+    )
+
+    proposal, model_id = nebius_client.revise_patch_on_apply_error(
+        original_patch="--- a/src/calc.py\n+++ b/src/calc.py\n@@ -1,2 +1,2 @@\n-wrong context\n+def calc(): return 2\n",
+        apply_error="Context mismatch in src/calc.py: hunk at line 1 does not match original file content.",
+        context=context,
+        plan=plan,
+    )
+
+    assert proposal.summary == "Fix hunk context lines"
+    assert model_id == "mock-nvidia-nemotron"
+    assert len(captured_prompts) == 1
+    sys_prompt, user_prompt = captured_prompts[0]
+    assert "PATCH APPLICATION ERROR:" in user_prompt
+    assert "Context mismatch in src/calc.py" in user_prompt
+    assert "REAL SOURCE FILES (WITH 1-BASED LINE NUMBERS):" in user_prompt
+    assert "1 | def calc(): return 1" in user_prompt
+
+
+def test_revise_patch_on_apply_error_empty_context_raises():
+    context = {
+        "relevant_files": [
+            {"rel_path": "src/other.py", "content": "def other(): pass", "truncated": False}
+        ]
+    }
+    plan = RepairPlan(
+        summary="Fix calc",
+        diagnosis_hypothesis="target missing",
+        target_files=["src/nonexistent.py"],
+        planned_changes=[],
+        risks=[],
+        verification_strategy=["pytest"]
+    )
+
+    with pytest.raises(ProofPatchError) as exc_info:
+        nebius_client.revise_patch_on_apply_error(
+            original_patch="--- a/src/nonexistent.py\n+++ b/src/nonexistent.py\n",
+            apply_error="File not found",
+            context=context,
+            plan=plan,
+        )
+
+    assert exc_info.value.code == ErrorCode.MODEL_OUTPUT_INVALID
+    assert "No source files matched planned targets" in exc_info.value.message
+

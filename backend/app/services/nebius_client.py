@@ -504,3 +504,99 @@ Produce a revised patch JSON now."""
         )
 
     return proposal, model_id
+
+
+# ── Patch revision on patch application failure ──────────────────────────────
+
+_APPLY_REVISE_SYSTEM = """You are a Python patch repair assistant. A previous unified diff patch failed to apply to the repository.
+Given the patch application error, the failed patch, and the exact source file contents with line numbers, produce a corrected minimal unified diff.
+
+IMPORTANT RULES:
+- Output ONLY valid JSON matching the schema. No prose before or after.
+- The patch field must be a valid unified diff string.
+- Context lines (' ') must match the original source lines EXACTLY, character for character, including indentation.
+- Use the provided line numbers to ensure accurate hunk line counts (@@ -start,count +start,count @@).
+- Keep changes minimal and targeted.
+- Do not modify test files unless they are the explicit subject of the bug report.
+
+Required JSON schema:
+{
+  "summary": "one sentence describing the corrected patch",
+  "patch_format": "unified_diff",
+  "patch": "--- a/path/to/file.py\\n+++ b/path/to/file.py\\n...",
+  "files_expected_to_change": ["path/to/file.py"],
+  "notes": ["what was corrected to ensure clean application"]
+}"""
+
+
+def _format_with_line_numbers(content: str) -> str:
+    """Format file content with 1-based line numbers."""
+    lines = content.splitlines()
+    width = max(len(str(len(lines))), 3)
+    return "\n".join(f"{i + 1:{width}d} | {line}" for i, line in enumerate(lines))
+
+
+def revise_patch_on_apply_error(
+    original_patch: str,
+    apply_error: str,
+    context: dict,
+    plan: RepairPlan,
+    job_id: Optional[str] = None,
+    role: ModelRole = ModelRole.ADVANCED,
+) -> Tuple[PatchProposal, str]:
+    """Call the model to correct a patch that failed to apply cleanly. Returns (proposal, model_id)."""
+    def _norm(p: str) -> str:
+        return p.replace("\\", "/").strip()
+
+    target_files_norm = {_norm(p) for p in plan.target_files}
+    available_paths = [_norm(f["rel_path"]) for f in context.get("relevant_files", [])]
+
+    matching_files = [
+        f for f in context.get("relevant_files", [])
+        if _norm(f["rel_path"]) in target_files_norm
+    ]
+
+    if not matching_files:
+        raise ProofPatchError(
+            code=ErrorCode.MODEL_OUTPUT_INVALID,
+            message=(
+                f"Cannot revise patch on apply failure: No source files matched planned targets {sorted(target_files_norm)}. "
+                f"Available repository files: {available_paths}."
+            ),
+            http_status=422,
+        )
+
+    file_context_numbered = "\n\n".join(
+        f"=== FILE: {_norm(f['rel_path'])} (with 1-based line numbers) ===\n{_format_with_line_numbers(f['content'])}"
+        for f in matching_files
+    )
+
+    user_prompt = f"""The previous patch failed to apply cleanly to the repository.
+
+PATCH APPLICATION ERROR:
+{apply_error}
+
+FAILED PATCH:
+{original_patch[:4000]}
+
+REAL SOURCE FILES (WITH 1-BASED LINE NUMBERS):
+{file_context_numbered}
+
+Repair plan summary: {plan.summary}
+
+Produce a corrected unified diff patch JSON matching the exact original lines and line numbers now."""
+
+    raw, model_id = call_model(_APPLY_REVISE_SYSTEM, user_prompt, role=role, job_id=job_id)
+    data = _extract_json_from_response(raw)
+
+    try:
+        proposal = PatchProposal.model_validate(data)
+    except Exception:
+        logger.warning("Corrected patch schema validation failed: outcome=invalid_schema")
+        raise ProofPatchError(
+            code=ErrorCode.MODEL_OUTPUT_INVALID,
+            message="The corrected patch did not match the required schema.",
+            http_status=502,
+        )
+
+    return proposal, model_id

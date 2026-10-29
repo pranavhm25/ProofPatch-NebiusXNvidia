@@ -180,136 +180,230 @@ def run_repair_job(job_id: str) -> None:
         )
         conn.commit()
 
-        patch_hash, changed_files, diff_text = patch_applier.apply_patch_to_copy(
-            baseline_path=baseline_dir,
-            working_copy_path=attempt1_dir,
-            proposal=proposal,
-        )
+        attempt1_applied = False
+        apply_error_msg = None
+        try:
+            patch_hash, changed_files, diff_text = patch_applier.apply_patch_to_copy(
+                baseline_path=baseline_dir,
+                working_copy_path=attempt1_dir,
+                proposal=proposal,
+            )
+            cur.execute(
+                "UPDATE attempts SET status = 'PATCH_APPLIED', patch_hash = ?, changed_files_json = ? WHERE id = ?",
+                (patch_hash, json.dumps(changed_files), attempt1_id),
+            )
+            conn.commit()
+            attempt1_applied = True
+        except ProofPatchError as ppe:
+            if ppe.code == ErrorCode.PATCH_APPLY_FAILED and settings.max_repair_attempts > 1:
+                cur.execute(
+                    "UPDATE attempts SET status = 'PATCH_APPLY_FAILED', completed_at = ? WHERE id = ?",
+                    (_utc_now(), attempt1_id),
+                )
+                conn.commit()
+                apply_error_msg = ppe.message
+                logger.warning("Attempt 1 patch application failed: %s; escalating to retry", ppe.message)
+            else:
+                raise
 
-        cur.execute(
-            "UPDATE attempts SET status = 'PATCH_APPLIED', patch_hash = ?, changed_files_json = ? WHERE id = ?",
-            (patch_hash, json.dumps(changed_files), attempt1_id),
-        )
-        conn.commit()
-
-        # Execute tests for attempt 1
-        update_job_status(job_id, JobStatus.TESTING, "Running tests in isolated environment")
-        test_run_1 = sandbox.run_tests(attempt1_dir, job_id=job_id)
-
-        test_run_1_id = str(uuid.uuid4())
-        cur.execute(
-            """
-            INSERT INTO test_runs (
-                id, attempt_id, status, command_id, exit_code, duration_ms,
-                tests_discovered, tests_passed, tests_failed, stdout, stderr,
-                output_truncated, created_at
-            ) VALUES (?, ?, ?, 'pytest-default', ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                test_run_1_id,
-                attempt1_id,
-                test_run_1.test_status,
-                test_run_1.exit_code,
-                test_run_1.duration_ms,
-                test_run_1.tests_discovered,
-                test_run_1.tests_passed,
-                test_run_1.tests_failed,
-                test_run_1.stdout,
-                test_run_1.stderr,
-                1 if test_run_1.output_truncated else 0,
-                _utc_now(),
-            ),
-        )
-        cur.execute(
-            "UPDATE attempts SET status = 'TESTED', completed_at = ? WHERE id = ?",
-            (_utc_now(), attempt1_id),
-        )
-        conn.commit()
-
-        final_test_run = test_run_1
+        final_test_run = None
         final_working_dir = attempt1_dir
-        final_diff = diff_text
+        final_diff = proposal.patch
 
-        # The advanced role is reserved for this documented failed-test escalation.
-        if test_run_1.test_status in ("FAILED", "ERROR") and settings.max_repair_attempts > 1:
+        if not attempt1_applied:
+            # Bounded retry for patch application failure (Robustness fix A)
             update_job_status(
                 job_id,
                 JobStatus.RETRYING,
-                "Revising patch using test failure evidence",
+                f"Revising patch after application failure: {apply_error_msg}",
                 attempt_count=2,
             )
-            try:
-                revised_proposal, revise_model = nebius_client.revise_patch(
-                    original_patch=diff_text,
-                    test_stdout=test_run_1.stdout,
-                    test_stderr=test_run_1.stderr,
-                    context=context,
-                    plan=plan,
-                    job_id=job_id,
-                    role=ModelRole.ADVANCED,
+            revised_proposal, revise_model = nebius_client.revise_patch_on_apply_error(
+                original_patch=proposal.patch,
+                apply_error=apply_error_msg,
+                context=context,
+                plan=plan,
+                job_id=job_id,
+                role=ModelRole.ADVANCED,
+            )
+            if revise_model not in models_used:
+                models_used.append(revise_model)
+
+            attempt2_dir = job_work_dir / "attempt_2"
+            attempt2_id = str(uuid.uuid4())
+            cur.execute(
+                "INSERT INTO attempts (id, job_id, attempt_number, status, plan_json, started_at) VALUES (?, ?, 2, 'PLANNED', ?, ?)",
+                (attempt2_id, job_id, plan.model_dump_json(), _utc_now()),
+            )
+            conn.commit()
+
+            patch_hash_2, changed_files_2, diff_text_2 = patch_applier.apply_patch_to_copy(
+                baseline_path=baseline_dir,
+                working_copy_path=attempt2_dir,
+                proposal=revised_proposal,
+            )
+            cur.execute(
+                "UPDATE attempts SET status = 'PATCH_APPLIED', patch_hash = ?, changed_files_json = ? WHERE id = ?",
+                (patch_hash_2, json.dumps(changed_files_2), attempt2_id),
+            )
+            conn.commit()
+
+            update_job_status(job_id, JobStatus.TESTING, "Running tests for revised patch")
+            test_run_2 = sandbox.run_tests(attempt2_dir, job_id=job_id)
+
+            test_run_2_id = str(uuid.uuid4())
+            cur.execute(
+                """
+                INSERT INTO test_runs (
+                    id, attempt_id, status, command_id, exit_code, duration_ms,
+                    tests_discovered, tests_passed, tests_failed, stdout, stderr,
+                    output_truncated, created_at
+                ) VALUES (?, ?, ?, 'pytest-default', ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    test_run_2_id,
+                    attempt2_id,
+                    test_run_2.test_status,
+                    test_run_2.exit_code,
+                    test_run_2.duration_ms,
+                    test_run_2.tests_discovered,
+                    test_run_2.tests_passed,
+                    test_run_2.tests_failed,
+                    test_run_2.stdout,
+                    test_run_2.stderr,
+                    1 if test_run_2.output_truncated else 0,
+                    _utc_now(),
+                ),
+            )
+            cur.execute(
+                "UPDATE attempts SET status = 'TESTED', completed_at = ? WHERE id = ?",
+                (_utc_now(), attempt2_id),
+            )
+            conn.commit()
+
+            final_test_run = test_run_2
+            final_working_dir = attempt2_dir
+            final_diff = diff_text_2
+
+        else:
+            # Execute tests for attempt 1
+            update_job_status(job_id, JobStatus.TESTING, "Running tests in isolated environment")
+            test_run_1 = sandbox.run_tests(attempt1_dir, job_id=job_id)
+
+            test_run_1_id = str(uuid.uuid4())
+            cur.execute(
+                """
+                INSERT INTO test_runs (
+                    id, attempt_id, status, command_id, exit_code, duration_ms,
+                    tests_discovered, tests_passed, tests_failed, stdout, stderr,
+                    output_truncated, created_at
+                ) VALUES (?, ?, ?, 'pytest-default', ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    test_run_1_id,
+                    attempt1_id,
+                    test_run_1.test_status,
+                    test_run_1.exit_code,
+                    test_run_1.duration_ms,
+                    test_run_1.tests_discovered,
+                    test_run_1.tests_passed,
+                    test_run_1.tests_failed,
+                    test_run_1.stdout,
+                    test_run_1.stderr,
+                    1 if test_run_1.output_truncated else 0,
+                    _utc_now(),
+                ),
+            )
+            cur.execute(
+                "UPDATE attempts SET status = 'TESTED', completed_at = ? WHERE id = ?",
+                (_utc_now(), attempt1_id),
+            )
+            conn.commit()
+
+            final_test_run = test_run_1
+            final_working_dir = attempt1_dir
+            final_diff = diff_text
+
+            # The advanced role is reserved for this documented failed-test escalation.
+            if test_run_1.test_status in ("FAILED", "ERROR") and settings.max_repair_attempts > 1:
+                update_job_status(
+                    job_id,
+                    JobStatus.RETRYING,
+                    "Revising patch using test failure evidence",
+                    attempt_count=2,
                 )
-                if revise_model not in models_used:
-                    models_used.append(revise_model)
+                try:
+                    revised_proposal, revise_model = nebius_client.revise_patch(
+                        original_patch=diff_text,
+                        test_stdout=test_run_1.stdout,
+                        test_stderr=test_run_1.stderr,
+                        context=context,
+                        plan=plan,
+                        job_id=job_id,
+                        role=ModelRole.ADVANCED,
+                    )
+                    if revise_model not in models_used:
+                        models_used.append(revise_model)
 
-                attempt2_dir = job_work_dir / "attempt_2"
-                attempt2_id = str(uuid.uuid4())
-                cur.execute(
-                    "INSERT INTO attempts (id, job_id, attempt_number, status, plan_json, started_at) VALUES (?, ?, 2, 'PLANNED', ?, ?)",
-                    (attempt2_id, job_id, plan.model_dump_json(), _utc_now()),
-                )
-                conn.commit()
+                    attempt2_dir = job_work_dir / "attempt_2"
+                    attempt2_id = str(uuid.uuid4())
+                    cur.execute(
+                        "INSERT INTO attempts (id, job_id, attempt_number, status, plan_json, started_at) VALUES (?, ?, 2, 'PLANNED', ?, ?)",
+                        (attempt2_id, job_id, plan.model_dump_json(), _utc_now()),
+                    )
+                    conn.commit()
 
-                patch_hash_2, changed_files_2, diff_text_2 = patch_applier.apply_patch_to_copy(
-                    baseline_path=baseline_dir,
-                    working_copy_path=attempt2_dir,
-                    proposal=revised_proposal,
-                )
+                    patch_hash_2, changed_files_2, diff_text_2 = patch_applier.apply_patch_to_copy(
+                        baseline_path=baseline_dir,
+                        working_copy_path=attempt2_dir,
+                        proposal=revised_proposal,
+                    )
 
-                cur.execute(
-                    "UPDATE attempts SET status = 'PATCH_APPLIED', patch_hash = ?, changed_files_json = ? WHERE id = ?",
-                    (patch_hash_2, json.dumps(changed_files_2), attempt2_id),
-                )
-                conn.commit()
+                    cur.execute(
+                        "UPDATE attempts SET status = 'PATCH_APPLIED', patch_hash = ?, changed_files_json = ? WHERE id = ?",
+                        (patch_hash_2, json.dumps(changed_files_2), attempt2_id),
+                    )
+                    conn.commit()
 
-                update_job_status(job_id, JobStatus.TESTING, "Running tests for revised patch")
-                test_run_2 = sandbox.run_tests(attempt2_dir, job_id=job_id)
+                    update_job_status(job_id, JobStatus.TESTING, "Running tests for revised patch")
+                    test_run_2 = sandbox.run_tests(attempt2_dir, job_id=job_id)
 
-                test_run_2_id = str(uuid.uuid4())
-                cur.execute(
-                    """
-                    INSERT INTO test_runs (
-                        id, attempt_id, status, command_id, exit_code, duration_ms,
-                        tests_discovered, tests_passed, tests_failed, stdout, stderr,
-                        output_truncated, created_at
-                    ) VALUES (?, ?, ?, 'pytest-default', ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        test_run_2_id,
-                        attempt2_id,
-                        test_run_2.test_status,
-                        test_run_2.exit_code,
-                        test_run_2.duration_ms,
-                        test_run_2.tests_discovered,
-                        test_run_2.tests_passed,
-                        test_run_2.tests_failed,
-                        test_run_2.stdout,
-                        test_run_2.stderr,
-                        1 if test_run_2.output_truncated else 0,
-                        _utc_now(),
-                    ),
-                )
-                cur.execute(
-                    "UPDATE attempts SET status = 'TESTED', completed_at = ? WHERE id = ?",
-                    (_utc_now(), attempt2_id),
-                )
-                conn.commit()
+                    test_run_2_id = str(uuid.uuid4())
+                    cur.execute(
+                        """
+                        INSERT INTO test_runs (
+                            id, attempt_id, status, command_id, exit_code, duration_ms,
+                            tests_discovered, tests_passed, tests_failed, stdout, stderr,
+                            output_truncated, created_at
+                        ) VALUES (?, ?, ?, 'pytest-default', ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            test_run_2_id,
+                            attempt2_id,
+                            test_run_2.test_status,
+                            test_run_2.exit_code,
+                            test_run_2.duration_ms,
+                            test_run_2.tests_discovered,
+                            test_run_2.tests_passed,
+                            test_run_2.tests_failed,
+                            test_run_2.stdout,
+                            test_run_2.stderr,
+                            1 if test_run_2.output_truncated else 0,
+                            _utc_now(),
+                        ),
+                    )
+                    cur.execute(
+                        "UPDATE attempts SET status = 'TESTED', completed_at = ? WHERE id = ?",
+                        (_utc_now(), attempt2_id),
+                    )
+                    conn.commit()
 
-                final_test_run = test_run_2
-                final_working_dir = attempt2_dir
-                final_diff = diff_text_2
+                    final_test_run = test_run_2
+                    final_working_dir = attempt2_dir
+                    final_diff = diff_text_2
 
-            except Exception as retry_exc:
-                logger.warning("Retry attempt failed: outcome=error type=%s", type(retry_exc).__name__)
+                except Exception as retry_exc:
+                    logger.warning("Retry attempt failed: outcome=error type=%s", type(retry_exc).__name__)
 
         # ── 5. VERDICT & ARTIFACTS ────────────────────────────────────────────
         test_schema = TestResultSchema(
