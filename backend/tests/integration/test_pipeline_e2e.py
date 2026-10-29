@@ -59,10 +59,9 @@ def test_pipeline_e2e_verified_on_sample_buggy_repo(tmp_path: Path):
         patch=(
             "--- a/src/calculator.py\n"
             "+++ b/src/calculator.py\n"
-            "@@ -1,4 +1,4 @@\n"
+            "@@ -1,3 +1,3 @@\n"
             " def absolute_value(n: int) -> int:\n"
             '     """Return the absolute value of an integer."""\n'
-            "     # Defect: negative numbers are returned without negation\n"
             "-    return n\n"
             "+    return -n if n < 0 else n\n"
         ),
