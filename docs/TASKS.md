@@ -144,7 +144,7 @@
 - [ ] **D8-01 — Feature freeze** (Project lead, P0)  
   Acceptance: Only release-blocking fixes are permitted after the freeze.
 
-- [ ] **D8-02 — README and setup guide** (WS-QA, P0)  
+- [x] **D8-02 — README and setup guide** (WS-QA, P0)  
   Acceptance: Includes architecture, environment setup, model configuration, sandbox setup, run commands, tests, security notes, and limitations.
 
 - [ ] **D8-03 — Benchmark summary** (WS-QA, P0)  
@@ -158,7 +158,7 @@
 
 ## 9. Day 9 — 29 October: Submission
 
-- [ ] **D9-01 — Repository audit**  
+- [x] **D9-01 — Repository audit**  
   Acceptance: Public access, license visible, README complete, setup instructions tested, no secrets.
 
 - [ ] **D9-02 — Demo audit**  
@@ -191,13 +191,13 @@
 ## 12. Release Checklist
 
 - [ ] Genuine NVIDIA model inference through Nebius Token Factory.
-- [ ] Required execution sandbox demonstrated.
-- [ ] End-to-end repair works.
-- [ ] Retry is bounded.
-- [ ] Verdict uses actual test evidence.
-- [ ] Security tests pass.
+- [x] Required execution sandbox demonstrated.
+- [x] End-to-end repair works.
+- [x] Retry is bounded.
+- [x] Verdict uses actual test evidence.
+- [x] Security tests pass.
 - [ ] Public demo and repository work.
-- [ ] License and setup documentation are visible.
+- [x] License and setup documentation are visible.
 - [ ] Public demo video under three minutes.
 - [ ] Tool feedback and project description are complete.
 - [ ] Submission is complete before the deadline.
