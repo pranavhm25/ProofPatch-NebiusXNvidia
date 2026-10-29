@@ -51,6 +51,8 @@ backend/logs/
 # ─── Uploaded source fixtures (only committed as checked-in demo repos) ──────
 *.zip
 !tests/fixtures/**/*.zip
+!backend/tests/fixtures/**/*.zip
+!backend/tests/fixtures/*.zip
 
 # ─── OS / editor ──────────────────────────────────────────────────────────────
 .DS_Store
