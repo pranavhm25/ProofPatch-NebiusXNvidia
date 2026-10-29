@@ -14,7 +14,7 @@ import hashlib
 import logging
 import re
 import shutil
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import List, Tuple
 
 from app.core.config import settings
@@ -25,8 +25,8 @@ logger = logging.getLogger(__name__)
 
 # Protected paths that a patch must never write to
 _PROTECTED_PATTERNS = [
-    r"^\.env",
-    r"^\.git[/\\]",
+    r"(^|[/\\])\.env",
+    r"(^|[/\\])\.git([/\\]|$)",
     r"credentials",
     r"secrets?\.",
     r"\.pem$",
@@ -34,8 +34,8 @@ _PROTECTED_PATTERNS = [
     r"id_rsa",
     r"id_ed25519",
     r"service.account",
-    r"\.aws[/\\]",
-    r"\.ssh[/\\]",
+    r"(^|[/\\])\.aws([/\\]|$)",
+    r"(^|[/\\])\.ssh([/\\]|$)",
 ]
 _PROTECTED_RE = re.compile("|".join(_PROTECTED_PATTERNS), re.IGNORECASE)
 
@@ -46,7 +46,7 @@ def _is_safe_patch_target(path: str) -> bool:
         return False
     if path.startswith("/") or path.startswith("\\"):
         return False
-    if ".." in Path(path).parts:
+    if ".." in PurePosixPath(path.replace("\\", "/")).parts:
         return False
     if "\x00" in path:
         return False
@@ -67,6 +67,7 @@ def _extract_changed_files_from_diff(diff_text: str) -> List[str]:
             path = line[4:].strip()
             # Strip b/ prefix if present
             path = re.sub(r"^b/", "", path)
+            path = path.replace("\\", "/").strip()
             if path and path != "/dev/null":
                 files.append(path)
     return list(dict.fromkeys(files))  # deduplicate, preserve order
@@ -179,8 +180,6 @@ def _apply_unified_diff(diff_text: str, working_dir: Path) -> None:
     Implements a minimal but correct unified diff parser/applier.
     Raises ProofPatchError on failure.
     """
-    import io
-
     lines = diff_text.splitlines(keepends=True)
     i = 0
     n = len(lines)
@@ -205,7 +204,7 @@ def _apply_unified_diff(diff_text: str, working_dir: Path) -> None:
 
         # Extract target path from +++ line
         new_path = re.sub(r"^\+\+\+\s+", "", new_header).strip()
-        new_path = re.sub(r"^b/", "", new_path).split("\t")[0].strip()
+        new_path = re.sub(r"^b/", "", new_path).split("\t")[0].strip().replace("\\", "/")
 
         if not _is_safe_patch_target(new_path):
             raise ProofPatchError(
@@ -270,28 +269,77 @@ def _apply_hunks(
     filename: str,
 ) -> List[str]:
     """Apply a list of parsed hunks to original line list, return patched lines."""
-    result = list(original)
-    offset = 0  # tracks line offset from previous hunks
+    result: List[str] = []
+    orig_idx = 0
 
     for old_start, old_count, new_start, new_count, hunk_lines in hunks:
-        # Convert to 0-indexed
-        pos = old_start - 1 + offset
-
-        # Separate context/removal lines from addition lines
-        removed = []
-        added = []
+        parsed_ops: List[Tuple[str, str]] = []
         for line in hunk_lines:
-            if line.startswith("-"):
-                removed.append(line[1:])
-            elif line.startswith("+"):
-                added.append(line[1:])
-            elif line.startswith(" ") or line.startswith("\\"):
-                # Context line — appears in both
-                pass
+            if line.startswith(("+", "-", " ")):
+                parsed_ops.append((line[0], line[1:]))
+            elif line.startswith("\\"):
+                # Handle '\ No newline at end of file'
+                if parsed_ops:
+                    last_op, last_text = parsed_ops[-1]
+                    if last_text.endswith(("\r\n", "\n")):
+                        parsed_ops[-1] = (last_op, last_text.rstrip("\r\n"))
+            elif line in ("\n", "\r\n"):
+                # Allow empty context lines that omit leading space
+                parsed_ops.append((" ", line))
 
-        # Verify context matches (simple check)
-        # Replace the old_count lines starting at pos with added lines
-        result[pos : pos + old_count] = added
-        offset += len(added) - old_count
+        expected_from_orig = [text for op, text in parsed_ops if op in (" ", "-")]
+        nominal_pos = max(0, old_start - 1) if old_start > 0 else 0
 
+        def check_match(pos: int) -> bool:
+            if pos < orig_idx:
+                return False
+            if pos + len(expected_from_orig) > len(original):
+                return False
+            for j, exp in enumerate(expected_from_orig):
+                actual = original[pos + j]
+                if actual.rstrip("\r\n") != exp.rstrip("\r\n"):
+                    return False
+            return True
+
+        match_pos = None
+        if check_match(nominal_pos):
+            match_pos = nominal_pos
+        else:
+            # Search nearby for matching context (handling context-only offsets)
+            max_search = max(len(original), 100)
+            for delta in range(1, max_search):
+                cand1 = nominal_pos + delta
+                if cand1 <= len(original) and check_match(cand1):
+                    match_pos = cand1
+                    break
+                cand2 = nominal_pos - delta
+                if cand2 >= orig_idx and check_match(cand2):
+                    match_pos = cand2
+                    break
+
+        if match_pos is None:
+            raise ProofPatchError(
+                code=ErrorCode.PATCH_APPLY_FAILED,
+                message=f"Context mismatch in {filename}: hunk at line {old_start} does not match original file content.",
+                http_status=422,
+            )
+
+        # Copy unchanged lines preceding this hunk
+        result.extend(original[orig_idx:match_pos])
+        curr_orig = match_pos
+
+        for op, text in parsed_ops:
+            if op == " ":
+                # Preserve original context line and its exact newline style
+                result.append(original[curr_orig])
+                curr_orig += 1
+            elif op == "-":
+                curr_orig += 1
+            elif op == "+":
+                result.append(text)
+
+        orig_idx = curr_orig
+
+    # Copy remaining unchanged lines after the last hunk
+    result.extend(original[orig_idx:])
     return result
