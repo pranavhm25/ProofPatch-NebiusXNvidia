@@ -52,7 +52,7 @@ def build_context(
     scored = []
     for f in includable:
         score = 0
-        rel = f["rel_path"]
+        rel = f["rel_path"].replace("\\", "/").strip()
         name = Path(rel).stem.lower()
         # Boost test files
         if f["is_test"]:
@@ -98,7 +98,7 @@ def build_context(
 
         total_chars += len(content)
         relevant_files.append({
-            "rel_path": f["rel_path"],
+            "rel_path": f["rel_path"].replace("\\", "/").strip(),
             "content": content,
             "truncated": truncated,
         })

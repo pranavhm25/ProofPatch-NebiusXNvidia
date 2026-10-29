@@ -13,6 +13,7 @@ from app.services.model_registry import ModelRole
 def test_call_model_success_with_mock(monkeypatch):
     monkeypatch.setattr(settings, "nebius_api_key", "test-key-mock")
     monkeypatch.setattr(settings, "nebius_model_reasoning", "nvidia/nemotron-mock")
+    monkeypatch.setattr(nebius_client.model_registry, "_cached_catalog", {"nvidia/nemotron-mock"})
 
     mock_response = {
         "choices": [{
@@ -137,6 +138,7 @@ def test_call_model_rejects_empty_content(monkeypatch):
 def test_generate_plan_schema_validation(monkeypatch):
     monkeypatch.setattr(settings, "nebius_api_key", "test-key-mock")
     monkeypatch.setattr(settings, "nebius_model_reasoning", "nvidia/nemotron-mock")
+    monkeypatch.setattr(nebius_client.model_registry, "_cached_catalog", {"nvidia/nemotron-mock"})
 
     valid_plan = {
         "summary": "Fix calculation bug",
@@ -164,3 +166,98 @@ def test_generate_plan_schema_validation(monkeypatch):
     assert isinstance(plan, RepairPlan)
     assert plan.target_files == ["src/calc.py"]
     assert model_id == "nvidia/nemotron-mock"
+
+
+def test_generate_patch_normalizes_backslash_paths_and_includes_content_in_prompt(monkeypatch):
+    captured_prompts = []
+
+    def mock_call_model(system_prompt, user_prompt, role=None, job_id=None):
+        captured_prompts.append((system_prompt, user_prompt))
+        proposal_json = json.dumps({
+            "summary": "Fix calc function",
+            "patch_format": "unified_diff",
+            "patch": "--- a/src/calc.py\n+++ b/src/calc.py\n@@ -1,2 +1,2 @@\n-def f(): pass\n+def f(): return 42\n",
+            "files_expected_to_change": ["src/calc.py"]
+        })
+        return proposal_json, "mock-model"
+
+    monkeypatch.setattr(nebius_client, "call_model", mock_call_model)
+
+    # Context uses Windows backslash paths
+    context = {
+        "relevant_files": [
+            {"rel_path": "src\\calc.py", "content": "def calculate(): return 123", "truncated": False}
+        ]
+    }
+    # Plan uses POSIX forward-slash paths
+    plan = RepairPlan(
+        summary="Fix calc",
+        diagnosis_hypothesis="calc returns wrong value",
+        target_files=["src/calc.py"],
+        planned_changes=[
+            {"file": "src/calc.py", "change": "return 42", "reason": "correct"}
+        ],
+        risks=[],
+        verification_strategy=["pytest"]
+    )
+
+    proposal, model_id = nebius_client.generate_patch(context, plan)
+    assert proposal.summary == "Fix calc function"
+    assert len(captured_prompts) == 1
+    sys_prompt, user_prompt = captured_prompts[0]
+
+    # Verify that the file content was NOT dropped from the prompt due to backslashes
+    assert "=== FILE: src/calc.py ===" in user_prompt
+    assert "def calculate(): return 123" in user_prompt
+
+
+def test_generate_patch_empty_context_raises():
+    context = {
+        "relevant_files": [
+            {"rel_path": "src/other.py", "content": "def other(): pass", "truncated": False}
+        ]
+    }
+    plan = RepairPlan(
+        summary="Fix calc",
+        diagnosis_hypothesis="target missing",
+        target_files=["src/nonexistent.py"],
+        planned_changes=[],
+        risks=[],
+        verification_strategy=["pytest"]
+    )
+
+    with pytest.raises(ProofPatchError) as exc_info:
+        nebius_client.generate_patch(context, plan)
+
+    assert exc_info.value.code == ErrorCode.MODEL_OUTPUT_INVALID
+    assert "No source files matched the planned target files" in exc_info.value.message
+    assert "src/nonexistent.py" in exc_info.value.message
+    assert "src/other.py" in exc_info.value.message
+
+
+def test_revise_patch_empty_context_raises():
+    context = {
+        "relevant_files": [
+            {"rel_path": "src/other.py", "content": "def other(): pass", "truncated": False}
+        ]
+    }
+    plan = RepairPlan(
+        summary="Fix calc",
+        diagnosis_hypothesis="target missing",
+        target_files=["src/nonexistent.py"],
+        planned_changes=[],
+        risks=[],
+        verification_strategy=["pytest"]
+    )
+
+    with pytest.raises(ProofPatchError) as exc_info:
+        nebius_client.revise_patch(
+            original_patch="--- a/src/nonexistent.py\n+++ b/src/nonexistent.py\n",
+            test_stdout="FAILED",
+            test_stderr="",
+            context=context,
+            plan=plan,
+        )
+
+    assert exc_info.value.code == ErrorCode.MODEL_OUTPUT_INVALID
+    assert "No source files matched the planned target files" in exc_info.value.message

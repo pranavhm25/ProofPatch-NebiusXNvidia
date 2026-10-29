@@ -134,9 +134,9 @@ def run_repair_job(job_id: str) -> None:
         # ── 1. VALIDATING & ANALYZING ──────────────────────────────────────────
         update_job_status(job_id, JobStatus.VALIDATING, "Validating repository structure")
         extracted_paths = [
-            str(p.relative_to(baseline_dir))
+            p.relative_to(baseline_dir).as_posix()
             for p in baseline_dir.rglob("*")
-            if p.is_file() and not archive._is_ignored_path(str(p.relative_to(baseline_dir)))
+            if p.is_file() and not archive._is_ignored_path(p.relative_to(baseline_dir).as_posix())
         ]
         inventory = archive.build_file_inventory(baseline_dir, extracted_paths)
 
@@ -394,8 +394,8 @@ def _create_and_save_artifacts(
     zip_path = artifacts_dir / f"patched_project_{job_id}.zip"
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
         for p in working_copy_dir.rglob("*"):
-            if p.is_file() and not archive._is_ignored_path(str(p.relative_to(working_copy_dir))):
-                zf.write(p, arcname=str(p.relative_to(working_copy_dir)))
+            if p.is_file() and not archive._is_ignored_path(p.relative_to(working_copy_dir).as_posix()):
+                zf.write(p, arcname=p.relative_to(working_copy_dir).as_posix())
 
     zip_size = zip_path.stat().st_size
     conn.execute(

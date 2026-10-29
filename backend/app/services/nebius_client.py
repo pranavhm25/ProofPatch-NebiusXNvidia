@@ -334,12 +334,43 @@ def generate_patch(
     role: ModelRole = ModelRole.REASONING,
 ) -> Tuple[PatchProposal, str]:
     """Call the model to generate a patch based on the repair plan. Returns (proposal, model_id)."""
+    def _norm(p: str) -> str:
+        return p.replace("\\", "/").strip()
+
+    target_files_norm = {_norm(p) for p in plan.target_files}
+    planned_files_norm = {_norm(pc.file) for pc in plan.planned_changes}
+    target_or_planned = target_files_norm | planned_files_norm
+    available_paths = [_norm(f["rel_path"]) for f in context.get("relevant_files", [])]
+
+    matching_files = [
+        f for f in context.get("relevant_files", [])
+        if _norm(f["rel_path"]) in target_or_planned
+    ]
+
+    if not matching_files:
+        raise ProofPatchError(
+            code=ErrorCode.MODEL_OUTPUT_INVALID,
+            message=(
+                f"Cannot generate patch: No source files matched the planned target files {sorted(target_or_planned)}. "
+                f"Available repository files in context: {available_paths}."
+            ),
+            http_status=422,
+        )
+
     file_context = "\n\n".join(
-        f"=== FILE: {f['rel_path']} ===\n{f['content']}"
-        for f in context["relevant_files"]
-        if f["rel_path"] in plan.target_files
-        or any(pc.file == f["rel_path"] for pc in plan.planned_changes)
+        f"=== FILE: {_norm(f['rel_path'])} ===\n{f['content']}"
+        for f in matching_files
     )
+
+    if not file_context.strip():
+        raise ProofPatchError(
+            code=ErrorCode.MODEL_OUTPUT_INVALID,
+            message=(
+                f"Cannot generate patch: Source file context is empty for target files {sorted(target_or_planned)}. "
+                f"Available repository files in context: {available_paths}."
+            ),
+            http_status=422,
+        )
 
     user_prompt = f"""Repair plan:
 Summary: {plan.summary}
@@ -405,11 +436,41 @@ def revise_patch(
     stdout_snippet = test_stdout[:max_chars] if test_stdout else "(empty)"
     stderr_snippet = test_stderr[:max_chars] if test_stderr else "(empty)"
 
+    def _norm(p: str) -> str:
+        return p.replace("\\", "/").strip()
+
+    target_files_norm = {_norm(p) for p in plan.target_files}
+    available_paths = [_norm(f["rel_path"]) for f in context.get("relevant_files", [])]
+
+    matching_files = [
+        f for f in context.get("relevant_files", [])
+        if _norm(f["rel_path"]) in target_files_norm
+    ]
+
+    if not matching_files:
+        raise ProofPatchError(
+            code=ErrorCode.MODEL_OUTPUT_INVALID,
+            message=(
+                f"Cannot revise patch: No source files matched the planned target files {sorted(target_files_norm)}. "
+                f"Available repository files in context: {available_paths}."
+            ),
+            http_status=422,
+        )
+
     file_context = "\n\n".join(
-        f"=== FILE: {f['rel_path']} ===\n{f['content']}"
-        for f in context["relevant_files"]
-        if f["rel_path"] in plan.target_files
+        f"=== FILE: {_norm(f['rel_path'])} ===\n{f['content']}"
+        for f in matching_files
     )
+
+    if not file_context.strip():
+        raise ProofPatchError(
+            code=ErrorCode.MODEL_OUTPUT_INVALID,
+            message=(
+                f"Cannot revise patch: Source file context is empty for target files {sorted(target_files_norm)}. "
+                f"Available repository files in context: {available_paths}."
+            ),
+            http_status=422,
+        )
 
     user_prompt = f"""The previous patch failed. Here is the test output:
 

@@ -83,7 +83,7 @@ def _is_safe_path(member_name: str) -> bool:
 
 def _is_ignored_path(rel_path: str) -> bool:
     """Return True if the path is in an ignored directory."""
-    parts = PurePosixPath(rel_path).parts
+    parts = PurePosixPath(rel_path.replace("\\", "/")).parts
     for part in parts[:-1]:  # check directory components
         if part in _IGNORED_DIRS:
             return True
@@ -231,7 +231,8 @@ def build_file_inventory(
     (the model context builder excludes them from model input).
     """
     inventory = []
-    for rel in extracted_paths:
+    for raw_rel in extracted_paths:
+        rel = raw_rel.replace("\\", "/").strip()
         abs_path = workspace_path / rel
         if not abs_path.is_file():
             continue
