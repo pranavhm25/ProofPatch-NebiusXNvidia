@@ -77,7 +77,11 @@ export function ProgressPage() {
 
       {/* Live Stage Progress Card */}
       <div className="rounded-2xl border border-warm-border dark:border-dark-border bg-white dark:bg-dark-surface p-6 shadow-soft space-y-6">
-        <div className="flex items-center justify-between pb-4 border-b border-warm-border-subtle dark:border-dark-border-subtle">
+        <div
+          className="flex items-center justify-between pb-4 border-b border-warm-border-subtle dark:border-dark-border-subtle"
+          aria-live="polite"
+          aria-atomic="true"
+        >
           <div className="flex items-center gap-2">
             {!isTerminal ? (
               <Spinner size="sm" className="text-[#27618D] dark:text-sky-400" />

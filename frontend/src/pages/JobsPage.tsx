@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { PageHeader } from '../components/PageHeader';
 import { StatCard } from '../components/StatCard';
@@ -7,7 +7,24 @@ import { VerdictBadge } from '../components/VerdictBadge';
 import { EmptyState } from '../components/EmptyState';
 import { LastUpdated } from '../components/LastUpdated';
 import { jobSessionStore, type SessionJob } from '../lib/jobSessionStore';
-import { Inbox, CheckCircle2, Clock, XCircle, ArrowUpRight, Wrench } from 'lucide-react';
+import { getJobs } from '../lib/api';
+import type { JobListItem } from '../types/api';
+import { Inbox, CheckCircle2, Clock, XCircle, ArrowUpRight, Wrench, RefreshCw, AlertCircle } from 'lucide-react';
+
+function toSessionJob(item: JobListItem): SessionJob {
+  return {
+    jobId: item.job_id,
+    projectName: item.project_name || 'Project',
+    bugReport: item.bug_report,
+    createdAt: item.created_at,
+    status: item.status,
+    stage: item.stage,
+    verdict: item.verdict ?? null,
+    attemptCount: item.attempt_count,
+    durationSeconds: item.duration_seconds ?? null,
+    modelId: item.model_id ?? null,
+  };
+}
 
 export function JobsPage() {
   const navigate = useNavigate();
@@ -16,17 +33,46 @@ export function JobsPage() {
 
   const [jobs, setJobs] = useState<SessionJob[]>(() => jobSessionStore.getJobs());
   const [selectedJobs, setSelectedJobs] = useState<Set<string>>(new Set());
+  const [isLive, setIsLive] = useState<boolean>(false);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+
+  const fetchBackendJobs = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const res = await getJobs({ limit: 100 });
+      if (res && Array.isArray(res.jobs)) {
+        setJobs(res.jobs.map(toSessionJob));
+        setIsLive(true);
+        setFetchError(null);
+      }
+    } catch (err: unknown) {
+      // Fallback to local session store
+      setJobs(jobSessionStore.getJobs());
+      setIsLive(false);
+      const msg = err instanceof Error ? err.message : 'Backend listing unavailable';
+      setFetchError(msg);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    return jobSessionStore.subscribe((updated) => {
-      setJobs(updated);
-    });
-  }, []);
+    fetchBackendJobs();
+  }, [fetchBackendJobs]);
+
+  useEffect(() => {
+    if (!isLive) {
+      return jobSessionStore.subscribe((updated) => {
+        setJobs(updated);
+      });
+    }
+  }, [isLive]);
 
   const totalCount = jobs.length;
   const verifiedCount = jobs.filter((j) => j.verdict === 'VERIFIED').length;
   const runningCount = jobs.filter(
-    (j) => !j.verdict && (j.status === 'QUEUED' || j.status === 'TESTING' || j.status === 'PLANNING' || j.status === 'PATCHING')
+    (j) => !j.verdict && (j.status === 'QUEUED' || jIsRunning(j.status))
   ).length;
   const failedCount = jobs.filter((j) => j.verdict === 'FAILED' || j.status === 'FAILED').length;
 
@@ -70,10 +116,18 @@ export function JobsPage() {
     <div className="max-w-5xl mx-auto w-full space-y-6">
       <PageHeader
         title="Repair Jobs"
-        badge={totalCount}
-        description="Inspect all automated repair sessions executed during this session. Review test outcomes, execution durations, and generated patches."
+        badge={isLive ? `${totalCount} records` : undefined}
+        description="Inspect all automated repair sessions executed across the workspace. Review test outcomes, execution durations, and generated patches."
         actions={
           <div className="flex items-center gap-2">
+            <button
+              onClick={fetchBackendJobs}
+              disabled={isLoading}
+              title="Refresh jobs from backend"
+              className="p-1.5 rounded-lg border border-warm-border dark:border-dark-border text-ink-muted dark:text-dark-ink-muted hover:text-ink-primary dark:hover:text-dark-ink-primary hover:bg-warm-pill dark:hover:bg-dark-pill transition-colors"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+            </button>
             <LastUpdated date="2026-10-30" />
             <Link
               to="/"
@@ -85,6 +139,17 @@ export function JobsPage() {
           </div>
         }
       />
+
+      {/* Offline Fallback Banner only when backend unreachable */}
+      {!isLive && fetchError && (
+        <div className="flex items-center justify-between px-4 py-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-900 dark:text-amber-200">
+          <span className="flex items-center gap-2">
+            <AlertCircle className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+            <span><strong>Offline Cache:</strong> Showing jobs cached in this browser session ({fetchError}).</span>
+          </span>
+          <span className="text-[11px] font-mono text-amber-700 dark:text-amber-300 shrink-0 ml-2">{totalCount} cached</span>
+        </div>
+      )}
 
       {/* Stat Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">

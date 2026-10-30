@@ -141,7 +141,7 @@
 
 ## 8. Day 8 — 28 October: Freeze and Submission Assets
 
-- [ ] **D8-01 — Feature freeze** (Project lead, P0)  
+- [x] **D8-01 — Feature freeze** (Project lead, P0)  
   Acceptance: Only release-blocking fixes are permitted after the freeze.
 
 - [x] **D8-02 — README and setup guide** (WS-QA, P0)  
@@ -153,7 +153,7 @@
 - [ ] **D8-04 — Demo video recording** (WS-QA/FE, P0)  
   Acceptance: Public YouTube video is under three minutes, shows the working product, and explains NVIDIA/Nebius use without unauthorized trademarks/music.
 
-- [ ] **D8-05 — Submission description** (Project lead, P0)  
+- [x] **D8-05 — Submission description** (Project lead, P0)  
   Acceptance: Problem, solution, features, architecture, model usage, Nebius service usage, impact, limitations, and demo links are accurate.
 
 ## 9. Day 9 — 29 October: Submission

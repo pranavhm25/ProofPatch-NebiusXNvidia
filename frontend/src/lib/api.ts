@@ -5,6 +5,7 @@ import type {
   JobStatusResponse,
   JobResult,
   ApiErrorResponse,
+  JobListResponse,
 } from '../types/api';
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '';
@@ -102,4 +103,22 @@ export async function getHealth(): Promise<{ status: string; database: string; v
 
 export function downloadUrl(jobId: string, format: 'patch' | 'zip'): string {
   return `${BASE_URL}/api/jobs/${encodeURIComponent(jobId)}/download?format=${format}`;
+}
+
+export async function getJobs(params?: {
+  limit?: number;
+  offset?: number;
+  status?: string;
+  verdict?: string;
+}): Promise<JobListResponse> {
+  const query = new URLSearchParams();
+  if (params?.limit !== undefined) query.set('limit', String(params.limit));
+  if (params?.offset !== undefined) query.set('offset', String(params.offset));
+  if (params?.status) query.set('status', params.status);
+  if (params?.verdict) query.set('verdict', params.verdict);
+
+  const qs = query.toString();
+  const url = `${BASE_URL}/api/jobs${qs ? `?${qs}` : ''}`;
+  const res = await fetch(url);
+  return handleResponse<JobListResponse>(res);
 }

@@ -96,6 +96,26 @@ export interface JobEvent {
   message: string;
 }
 
+export interface JobListItem {
+  job_id: string;
+  project_id: string;
+  project_name: string;
+  bug_report: string;
+  status: JobStatus;
+  stage: string;
+  verdict: FinalVerdict | null;
+  attempt_count: number;
+  model_id: string | null;
+  duration_seconds: number | null;
+  created_at: string;
+  completed_at: string | null;
+}
+
+export interface JobListResponse {
+  total: number;
+  jobs: JobListItem[];
+}
+
 export interface JobStatusResponse {
   job_id: string;
   status: JobStatus;

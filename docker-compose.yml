@@ -1,0 +1,28 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: proofpatch-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - NEBIUS_API_KEY=${NEBIUS_API_KEY:-}
+      - NEBIUS_MODEL_FAST=${NEBIUS_MODEL_FAST:-zai-org/GLM-5.3-Flash}
+      - NEBIUS_MODEL_REASONING=${NEBIUS_MODEL_REASONING:-nvidia/Nemotron-3-Ultra-550b-a55b}
+      - NEBIUS_MODEL_ADVANCED=${NEBIUS_MODEL_ADVANCED:-nvidia/Nemotron-3-Ultra-550b-a55b}
+      - ENVIRONMENT=production
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: proofpatch-frontend
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+    restart: unless-stopped

@@ -138,16 +138,22 @@ def call_model(
             fallback_attempted = True
             attempt = 0
             continue
-        if response.status_code == 429:
-            logger.warning("Model request outcome=rate_limited job=%s role=%s model_id=%s attempt=%d", job_id, resolved_role.value, model_id, attempt + 1)
-            last_error = ProofPatchError(
+        if response.status_code == 402:
+            logger.warning("Model request outcome=budget_exhausted job=%s role=%s model_id=%s status=402", job_id, resolved_role.value, model_id)
+            raise ProofPatchError(
                 code=ErrorCode.PROVIDER_RATE_LIMIT,
-                message="The model provider is rate-limiting requests. Please try again later.",
-                http_status=429,
-                details={"retryable": True},
+                message="Model provider budget exhausted (HTTP 402). Execution halted immediately.",
+                http_status=402,
+                details={"blocked": True},
             )
-            attempt += 1
-            continue
+        if response.status_code == 429:
+            logger.warning("Model request outcome=rate_limited job=%s role=%s model_id=%s status=429", job_id, resolved_role.value, model_id)
+            raise ProofPatchError(
+                code=ErrorCode.PROVIDER_RATE_LIMIT,
+                message="Model provider rate limit exceeded (HTTP 429). Execution halted immediately without retry loop.",
+                http_status=429,
+                details={"blocked": True},
+            )
         if response.status_code >= 500:
             logger.warning("Model request outcome=provider_error job=%s role=%s model_id=%s status=%d attempt=%d", job_id, resolved_role.value, model_id, response.status_code, attempt + 1)
             last_error = ProofPatchError(
@@ -207,23 +213,41 @@ def call_model(
 
 def _extract_json_from_response(content: str) -> dict:
     """Extract a JSON object from a model response that may contain markdown fences or surrounding text."""
-    fence_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", content, re.DOTALL)
-    if fence_match:
-        raw = fence_match.group(1)
-    else:
-        start = content.find("{")
-        end = content.rfind("}")
+    text = content.strip()
+
+    # If wrapped in markdown code fence, extract fence content
+    fence_match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", text)
+    candidate_text = fence_match.group(1).strip() if fence_match else text
+
+    # Find the outermost { ... } in the candidate
+    start = candidate_text.find("{")
+    end = candidate_text.rfind("}")
+    if start == -1 or end == -1 or end <= start:
+        # Fallback to search original text if fence didn't contain complete object
+        start = text.find("{")
+        end = text.rfind("}")
         if start == -1 or end == -1 or end <= start:
             raise ProofPatchError(
                 code=ErrorCode.MODEL_OUTPUT_INVALID,
                 message="The model response did not contain a valid JSON object.",
                 http_status=502,
             )
-        raw = content[start : end + 1]
+        candidate_text = text
+
+    raw = candidate_text[start : end + 1]
 
     try:
-        return json.loads(raw)
+        return json.loads(raw, strict=False)
     except (json.JSONDecodeError, TypeError):
+        # Secondary fallback: if fence extraction cut off nested content, try outermost braces on full text
+        if candidate_text is not text:
+            start_full = text.find("{")
+            end_full = text.rfind("}")
+            if start_full != -1 and end_full > start_full:
+                try:
+                    return json.loads(text[start_full : end_full + 1], strict=False)
+                except (json.JSONDecodeError, TypeError):
+                    pass
         raise ProofPatchError(
             code=ErrorCode.MODEL_OUTPUT_INVALID,
             message="The model returned malformed JSON.",

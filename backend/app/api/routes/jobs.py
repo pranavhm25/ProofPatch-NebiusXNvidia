@@ -6,6 +6,7 @@ import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks
 from fastapi.responses import JSONResponse
@@ -21,6 +22,8 @@ from app.schemas.api import (
     DiffInfoSchema,
     FinalVerdict,
     JobEvent,
+    JobListItem,
+    JobListResponse,
     JobResultResponse,
     JobStatus,
     JobStatusResponse,
@@ -258,3 +261,103 @@ def get_job_result(job_id: str):
         diff=diff_info,
         completed_at=completed_at,
     )
+
+
+@router.get("", response_model=JobListResponse)
+def list_jobs(
+    limit: int = 50,
+    offset: int = 0,
+    status: Optional[str] = None,
+    verdict: Optional[str] = None,
+):
+    """List historical repair jobs with filtering and pagination."""
+    valid_statuses = {s.value for s in JobStatus}
+    if status is not None and status not in valid_statuses:
+        return make_error_response(
+            status_code=400,
+            code="INVALID_FILTER",
+            message=f"Invalid status filter: '{status}'. Allowed values: {', '.join(sorted(valid_statuses))}",
+        )
+
+    valid_verdicts = {v.value for v in FinalVerdict}
+    if verdict is not None and verdict not in valid_verdicts:
+        return make_error_response(
+            status_code=400,
+            code="INVALID_FILTER",
+            message=f"Invalid verdict filter: '{verdict}'. Allowed values: {', '.join(sorted(valid_verdicts))}",
+        )
+
+    safe_limit = max(1, min(limit, 100))
+    safe_offset = max(0, offset)
+
+    conn = get_connection()
+    cur = conn.cursor()
+
+    conditions = []
+    params = []
+
+    if status:
+        conditions.append("j.status = ?")
+        params.append(status)
+    if verdict:
+        conditions.append("j.final_verdict = ?")
+        params.append(verdict)
+
+    where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+
+    count_sql = f"SELECT COUNT(*) as total FROM jobs j {where_clause}"
+    cur.execute(count_sql, tuple(params))
+    total_row = cur.fetchone()
+    total = total_row["total"] if total_row else 0
+
+    data_sql = f"""
+        SELECT j.id, j.project_id, COALESCE(p.display_name, 'unknown') AS project_name,
+               j.bug_report, j.status, j.stage, j.final_verdict, j.attempt_count,
+               j.model_id, j.created_at, j.completed_at
+        FROM jobs j
+        LEFT JOIN projects p ON j.project_id = p.id
+        {where_clause}
+        ORDER BY j.created_at DESC
+        LIMIT ? OFFSET ?
+    """
+    cur.execute(data_sql, tuple(params + [safe_limit, safe_offset]))
+    rows = cur.fetchall()
+
+    jobs_list = []
+    for row in rows:
+        duration_seconds = None
+        if row["completed_at"] and row["created_at"]:
+            try:
+                t0 = datetime.fromisoformat(row["created_at"])
+                t1 = datetime.fromisoformat(row["completed_at"])
+                duration_seconds = max(0.0, round((t1 - t0).total_seconds(), 2))
+            except Exception:
+                pass
+
+        truncated_bug_report = (row["bug_report"] or "")[:200]
+
+        verdict_val = None
+        if row["final_verdict"]:
+            try:
+                verdict_val = FinalVerdict(row["final_verdict"])
+            except ValueError:
+                pass
+
+        jobs_list.append(
+            JobListItem(
+                job_id=row["id"],
+                project_id=row["project_id"],
+                project_name=row["project_name"],
+                bug_report=truncated_bug_report,
+                status=JobStatus(row["status"]),
+                stage=row["stage"] or "",
+                verdict=verdict_val,
+                attempt_count=row["attempt_count"] or 0,
+                model_id=row["model_id"] or None,
+                duration_seconds=duration_seconds,
+                created_at=row["created_at"],
+                completed_at=row["completed_at"],
+            )
+        )
+
+    return JobListResponse(total=total, jobs=jobs_list)
