@@ -1,5 +1,6 @@
 """Unit tests for sandbox isolation, timeout, and resource limits."""
 import os
+import sys
 import zipfile
 from pathlib import Path
 
@@ -46,6 +47,7 @@ def test_sandbox_timeout_limit(tmp_path: Path, monkeypatch):
     assert result.duration_ms >= 900  # at least ~1s ran before timeout
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="RLIMIT_AS memory enforcement requires Linux/POSIX sandbox")
 def test_sandbox_memory_limit(tmp_path: Path):
     """Verify that an allocating memory-hog test fails cleanly and is bounded."""
     fixture_zip = Path(__file__).parent.parent / "fixtures" / "fixture_memory_hog.zip"
