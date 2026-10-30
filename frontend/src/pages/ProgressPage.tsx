@@ -99,7 +99,11 @@ export function ProgressPage() {
 
       {/* Live Stage Progress Card */}
       <div className="rounded-2xl border border-warm-border bg-white p-6 shadow-soft space-y-6">
-        <div className="flex items-center justify-between pb-4 border-b border-warm-border-subtle">
+        <div
+          className="flex items-center justify-between pb-4 border-b border-warm-border-subtle"
+          aria-live="polite"
+          aria-atomic="true"
+        >
           <div className="flex items-center gap-2">
             {!isTerminal ? (
               <Loader2 className="h-4 w-4 animate-spin text-[#27618D]" strokeWidth={1.5} />

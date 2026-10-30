@@ -69,8 +69,8 @@ export function JobsPage() {
     <div className="max-w-5xl mx-auto w-full space-y-6">
       <PageHeader
         title="Repair Jobs"
-        badge={totalCount}
-        description="Inspect all automated repair sessions executed during this session. Review test outcomes, execution durations, and generated patches."
+        badge="This session only"
+        description="Inspect all automated repair sessions executed during this browser session (stored locally; a persistent multi-session API endpoint has been proposed). Review test outcomes, execution durations, and generated patches."
         actions={
           <Link
             to="/"
@@ -81,6 +81,15 @@ export function JobsPage() {
           </Link>
         }
       />
+
+      {/* Honest Session Disclosure */}
+      <div className="flex items-center justify-between px-4 py-2.5 rounded-xl bg-warm-bg/90 border border-warm-border text-xs text-ink-secondary">
+        <span className="flex items-center gap-2">
+          <Clock className="h-3.5 w-3.5 text-ink-muted shrink-0" />
+          <span><strong>Session Storage:</strong> Repair jobs displayed here are recorded from your current browser session. A persistent backend listing endpoint (<code className="font-mono text-ink-primary">GET /api/jobs</code>) has been submitted for approval.</span>
+        </span>
+        <span className="text-[11px] font-mono text-ink-muted shrink-0 ml-2">{totalCount} recorded</span>
+      </div>
 
       {/* Stat Cards (Matching Reference Screenshot row) */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">

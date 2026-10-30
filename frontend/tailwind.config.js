@@ -21,9 +21,9 @@ export default {
         },
         ink: {
           primary: '#2A2420',
-          secondary: '#7A726B',
-          muted: '#9E968F',
-          light: '#BAAE9F',
+          secondary: '#5C544E',
+          muted: '#736B63',
+          light: '#8F857B',
         },
         verdict: {
           verified: {
