@@ -117,49 +117,77 @@ Examples:
 - Test failure: show failing test output and the retry count.
 - Expired artifact: explain that temporary files have expired and the user must upload again.
 
-## 5. Visual System
+## 5. Visual System & Design System Tokens
 
-### Color roles
-Use a neutral dark or light developer-tool theme. Choose one base theme and ensure contrast. Suggested semantic roles:
-- Background: neutral slate/charcoal or near-white.
-- Surface: slightly elevated neutral surface.
-- Text: high-contrast neutral.
-- Primary action: restrained blue or violet.
-- Success: green reserved for verified evidence.
-- Warning: amber for incomplete or cautionary states.
-- Error: red for failed or blocked states.
-- Borders: subtle neutral.
-- Diff additions/deletions: standard green/red backgrounds with text contrast.
+ProofPatch follows a **warm, minimal, calm developer product aesthetic** derived from the reference visual standard:
+- **Base Canvas:** Warm off-white (#F3EFEA) providing high contrast without screen glare.
+- **Navigation:** Persistent 260px sidebar (#ECE7E1) with nested tree items (└─ branch indicator), brand mark, workspace picker pill, and system status indicator.
+- **Primary Panel:** Elevated clean white surface (#FFFFFF) with 24px corner radius (
+ounded-3xl), 1px subtle warm border (#E8E2D9), and soft shadow (shadow-soft).
+- **Typography:** Inter for clear readable interface text, JetBrains Mono for code blocks, line numbers, and cryptographic hashes.
 
-Do not use color alone to communicate state; pair it with text and icons.
+### 5.1 Color Tokens
 
-### Typography
-- UI font: system sans-serif or a bundled, properly licensed modern sans font.
-- Code font: system monospace.
-- Use a clear type scale: page title, section title, body, secondary text, metadata.
-- Keep body text comfortably readable.
-- Avoid oversized marketing headlines in the main workflow.
+| Semantic Token | Value | Hex | Description |
+|---|---|---|---|
+| --warm-bg | warm-bg | #F3EFEA | Page backdrop canvas |
+| --warm-panel | warm-panel | #ECE7E1 | Persistent sidebar background |
+| --warm-card | warm-card | #FFFFFF | Main floating workspace container |
+| --warm-border | warm-border | #E8E2D9 | 1px card and separator border |
+| --warm-border-subtle | warm-border-subtle | #E4DFD7 | Inner section divider line |
+| --warm-muted | warm-muted | #E2DDD5 | Active nav link & button hover |
+| --warm-pill | warm-pill | #EDE9E2 | Inactive tab pill background |
+| --ink-primary | ink-primary | #2A2420 | Primary text and primary CTA buttons |
+| --ink-secondary | ink-secondary | #7A726B | Labels, descriptions, secondary copy |
+| --ink-muted | ink-muted | #9E968F | Timestamps, counters, icons |
 
-### Spacing and layout
-- 8-point spacing rhythm.
-- Main content maximum width around 1,200 px.
-- Form width comfortable for reading.
-- Results page can use a two-column layout on desktop: file list on the left, diff/report on the right.
-- Collapse to one column on small screens.
-- Preserve visible navigation and clear focus states.
+### 5.2 Verdict Badges & Accessible States
+To ensure accessibility, color is never used as the sole indicator of status. Every badge pairs a unique icon with title-case text:
 
-### Components
-- `Button`: primary, secondary, destructive/disabled as needed.
-- `Dropzone`: idle, drag-over, uploading, accepted, rejected.
-- `Textarea`: label, helper text, character count, error.
-- `StatusBadge`: all job/verdict states.
-- `StageTimeline`: pending, active, completed, failed, blocked.
-- `MetricCard`: test counts, duration, changed files.
-- `DiffViewer`: file selector, additions/deletions, copy/download.
-- `LogPanel`: bounded output, expand/collapse, truncation notice.
-- `AttemptCard`: attempt number, patch hash, test status, duration.
-- `Alert`: info, warning, error, success.
-- `EmptyState`: clear next action.
+| Verdict / Status | Background | Text | Border | Icon |
+|---|---|---|---|---|
+| VERIFIED | #EAF5ED | #1E6B3C | #BDE3CA | CheckCircle2 |
+| NOT_VERIFIED | #FEF7EC | #9A6218 | #F7DFC0 | AlertCircle |
+| FAILED | #FDF2F2 | #9C2A2A | #F6C8C8 | XCircle |
+| BLOCKED | #F4F1ED | #5A534D | #DDD7CF | ShieldAlert |
+| RUNNING | #EEF5FA | #27618D | #C8E1F3 | Loader2 (spinning) |
+
+### 5.3 Component Inventory
+
+1. **PageHeader (src/components/PageHeader.tsx):**
+   - Title text with bold tracking.
+   - Count badge pill (inline-flex px-2.5 py-0.5 rounded-full bg-warm-pill text-xs).
+   - Descriptive paragraph and trailing action button slot.
+
+2. **StatCard (src/components/StatCard.tsx):**
+   - High-contrast 3xl metric number.
+   - Secondary label underneath.
+   - Top-right icon container with muted tone.
+   - Optional bottom hint line separated by subtle border.
+
+3. **PillTabs (src/components/PillTabs.tsx):**
+   - Horizontal tab bar matching the reference screenshot filter controls.
+   - Active tab: white background, 1px #E8E2D9 border, shadow-soft, dark ink text.
+   - Inactive tab: tinted #EDE9E2 background, muted ink text.
+
+4. **Sidebar Navigation (src/components/layout/Sidebar.tsx):**
+   - 260px desktop width; responsive sliding drawer on mobile with backdrop blur.
+   - Workspace dropdown pill with live backend indicator dot.
+   - Grouped sections: Workspace, Insight, Info.
+   - Nested sub-items under Jobs with tree connectors (└─ All Jobs, └─ Verified, etc.).
+
+5. **DiffViewer (src/components/DiffViewer.tsx):**
+   - Multi-file tab selector with green/red modification pills (+1 -1).
+   - Line-numbered hunk rendering with green additions and red deletions.
+   - Copy unified diff button with clipboard feedback.
+   - Direct download actions for .patch and patched repository .zip.
+
+6. **TestEvidencePanel & LogPanel (src/components/TestEvidencePanel.tsx):**
+   - Collapsible monospace terminal viewer with command ID and execution time.
+   - Explicit truncation indicator for large test logs.
+
+7. **Toast Notifications (src/components/Toast.tsx):**
+   - Floating notifications anchored to the bottom-right for validation, upload, and clipboard events.
 
 ## 6. Interaction Rules
 
