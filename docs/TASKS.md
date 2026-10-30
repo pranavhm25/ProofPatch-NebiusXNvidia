@@ -147,6 +147,9 @@
 - [x] **D8-02 — README and setup guide** (WS-QA, P0)  
   Acceptance: Includes architecture, environment setup, model configuration, sandbox setup, run commands, tests, security notes, and limitations.
 
+- [x] **D8-02b — Frontend Quality, Test Automation & Accessibility Pass** (WS-FE/QA, P0)  
+  Acceptance: 118 Vitest/RTL tests, 18 Playwright E2E/Axe tests, code coverage >94% lines, 0 WCAG 2.1 AA violations, CI workflows, and zero secret leaks. Documented in docs/FRONTEND_TEST_REPORT.md.
+
 - [ ] **D8-03 — Benchmark summary** (WS-QA, P0)  
   Acceptance: Report actual fixture count, conditions, successes, failures, latency, and limitations; no invented metrics.
 
