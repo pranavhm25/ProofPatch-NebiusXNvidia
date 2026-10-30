@@ -50,5 +50,8 @@
     "vite": "^6.0.5",
     "vitest": "^5.0.5",
     "vitest-axe": "^0.1.0"
+  },
+  "overrides": {
+    "postcss-selector-parser": "^6.1.5"
   }
 }
