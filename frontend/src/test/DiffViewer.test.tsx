@@ -80,4 +80,18 @@ describe('DiffViewer', () => {
     });
     expect(writeText).toHaveBeenCalledWith(sampleDiff.unified_diff);
   });
+it('safely escapes HTML tags and script injections without executing DOM scripts', () => {
+    const maliciousDiff: DiffInfo = {
+      available: true,
+      changed_files: ['hack.py'],
+      unified_diff: '--- a/hack.py\n+++ b/hack.py\n@@ -1,2 +1,2 @@\n-<script>alert("pwned")</script>\n+<img src="x" onerror="evil()" />\n',
+      download_patch_url: '/api/jobs/job-123/download?format=patch',
+      download_zip_url: '/api/jobs/job-123/download?format=zip',
+    };
+    const { container } = render(<DiffViewer diff={maliciousDiff} jobId="job-123" />);
+    expect(container.querySelectorAll('script').length).toBe(0);
+    expect(container.querySelectorAll('img[onerror]').length).toBe(0);
+    expect(screen.getByText('<script>alert("pwned")</script>')).toBeInTheDocument();
+    expect(screen.getByText('<img src="x" onerror="evil()" />')).toBeInTheDocument();
+  });
 });

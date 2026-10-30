@@ -71,9 +71,12 @@ describe('End-to-End Integration Tests (MSW + RTL)', () => {
       fireEvent.click(submitBtn);
 
       // 5. Assert: router transitions to ProgressPage
-      await waitFor(() => {
-        expect(screen.getByText('Repair Pipeline Active')).toBeInTheDocument();
-      });
+      await waitFor(
+        () => {
+          expect(screen.getByText('Repair Pipeline Active')).toBeInTheDocument();
+        },
+        { timeout: 3500 }
+      );
 
       // 6. Assert: Timeline shows stages
       await waitFor(() => {

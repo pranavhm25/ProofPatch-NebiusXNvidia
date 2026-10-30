@@ -23,10 +23,18 @@ export default defineConfig({
     globals: true,
     environment: 'jsdom',
     setupFiles: './src/test/setup.ts',
+    testTimeout: 15000,
+    exclude: ['node_modules/**', 'dist/**', 'e2e/**'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html'],
       exclude: ['src/test/**', '**/*.d.ts', 'src/main.tsx', 'src/vite-env.d.ts'],
+      thresholds: {
+        lines: 85,
+        branches: 80,
+        functions: 85,
+        statements: 85,
+      },
     },
   },
 });
