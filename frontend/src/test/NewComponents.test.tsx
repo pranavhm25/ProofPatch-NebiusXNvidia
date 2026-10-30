@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, renderHook } from '@testing-library/react';
+import { render, screen, fireEvent, renderHook, act } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { CopyButton } from '../components/CopyButton';
 import { Accordion } from '../components/Accordion';
@@ -8,6 +8,8 @@ import { PasswordInput } from '../components/PasswordInput';
 import { LastUpdated } from '../components/LastUpdated';
 import { ThemeToggle } from '../components/ThemeToggle';
 import { useUtmParams } from '../hooks/useUtmParams';
+import { useTheme } from '../hooks/useTheme';
+import { jobSessionStore, type SessionJob } from '../lib/jobSessionStore';
 
 describe('New Frontend Components & Hooks', () => {
   beforeEach(() => {
@@ -16,7 +18,7 @@ describe('New Frontend Components & Hooks', () => {
     sessionStorage.clear();
   });
 
-  describe('ThemeToggle', () => {
+  describe('ThemeToggle & useTheme', () => {
     it('renders with accessible title and toggles theme on click', () => {
       render(<ThemeToggle />);
       const btn = screen.getByRole('button');
@@ -26,11 +28,31 @@ describe('New Frontend Components & Hooks', () => {
       fireEvent.click(btn);
       expect(localStorage.getItem('proofpatch_theme')).toBeTruthy();
     });
+
+    it('manages theme states and toggling in useTheme hook', () => {
+      const { result } = renderHook(() => useTheme());
+
+      act(() => {
+        result.current.setTheme('dark');
+      });
+      expect(result.current.theme).toBe('dark');
+      expect(result.current.isDark).toBe(true);
+
+      act(() => {
+        result.current.toggleTheme();
+      });
+      expect(result.current.theme).toBe('light');
+      expect(result.current.isDark).toBe(false);
+
+      act(() => {
+        result.current.setTheme('system');
+      });
+      expect(result.current.theme).toBe('system');
+    });
   });
 
   describe('CopyButton', () => {
     it('renders copy button and updates state upon clicking', async () => {
-      // Mock clipboard API
       const writeTextMock = vi.fn().mockResolvedValue(undefined);
       Object.assign(navigator, {
         clipboard: {
@@ -45,6 +67,22 @@ describe('New Frontend Components & Hooks', () => {
       fireEvent.click(btn);
       expect(writeTextMock).toHaveBeenCalledWith('sample-text');
       expect(await screen.findByText('Done')).toBeInTheDocument();
+    });
+
+    it('renders icon-only variant and handles clipboard write failure gracefully', async () => {
+      const writeTextMock = vi.fn().mockRejectedValue(new Error('Permission denied'));
+      Object.assign(navigator, {
+        clipboard: {
+          writeText: writeTextMock,
+        },
+      });
+
+      render(<CopyButton text="sample" iconOnly={true} title="Copy icon" />);
+      const btn = screen.getByRole('button', { name: /Copy/i });
+      expect(btn).toBeInTheDocument();
+
+      fireEvent.click(btn);
+      expect(writeTextMock).toHaveBeenCalled();
     });
   });
 
@@ -63,7 +101,6 @@ describe('New Frontend Components & Hooks', () => {
       expect(firstBtn).toHaveAttribute('aria-expanded', 'true');
       expect(screen.getByText('An automated repair tool.')).toBeInTheDocument();
 
-      // Click again to collapse
       fireEvent.click(firstBtn);
       expect(firstBtn).toHaveAttribute('aria-expanded', 'false');
     });
@@ -106,6 +143,56 @@ describe('New Frontend Components & Hooks', () => {
       );
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     });
+
+    it('handles Escape key, backdrop click, and non-destructive styling', () => {
+      const onClose = vi.fn();
+
+      render(
+        <ConfirmationModal
+          isOpen={true}
+          title="Archive project?"
+          description="Will be archived."
+          onConfirm={vi.fn()}
+          onClose={onClose}
+          destructive={false}
+        />
+      );
+
+      // Press Escape
+      fireEvent.keyDown(window, { key: 'Escape' });
+      expect(onClose).toHaveBeenCalledTimes(1);
+
+      // Close button
+      const closeBtn = screen.getByLabelText('Close dialog');
+      fireEvent.click(closeBtn);
+      expect(onClose).toHaveBeenCalledTimes(2);
+    });
+
+    it('manages focus trap inside open modal', () => {
+      const onClose = vi.fn();
+
+      render(
+        <ConfirmationModal
+          isOpen={true}
+          title="Modal focus test"
+          description="Testing tab trap."
+          onConfirm={vi.fn()}
+          onClose={onClose}
+        />
+      );
+
+      const buttons = screen.getAllByRole('button');
+      const firstBtn = buttons[0];
+      const lastBtn = buttons[buttons.length - 1];
+
+      // Shift+Tab on first button wraps to last
+      firstBtn.focus();
+      fireEvent.keyDown(firstBtn, { key: 'Tab', shiftKey: true });
+
+      // Tab on last button wraps to first
+      lastBtn.focus();
+      fireEvent.keyDown(lastBtn, { key: 'Tab', shiftKey: false });
+    });
   });
 
   describe('PasswordInput', () => {
@@ -125,17 +212,19 @@ describe('New Frontend Components & Hooks', () => {
   });
 
   describe('LastUpdated', () => {
-    it('renders formatted date in a semantic time element', () => {
-      render(<LastUpdated date="2026-10-30" />);
+    it('renders formatted date in a semantic time element and handles invalid date fallback', () => {
+      const { rerender } = render(<LastUpdated date="2026-10-30" />);
       expect(screen.getByText(/Last updated:/i)).toBeInTheDocument();
       const time = screen.getByText(/Oct 30, 2026/i);
       expect(time.tagName.toLowerCase()).toBe('time');
+
+      rerender(<LastUpdated date="invalid-date" />);
+      expect(screen.getByText(/invalid-date/i)).toBeInTheDocument();
     });
   });
 
   describe('useUtmParams hook', () => {
     it('reads and stores utm parameters in sessionStorage without tracking scripts', () => {
-      // Mock window.location.search
       const originalLocation = window.location;
       delete (window as any).location;
       window.location = {
@@ -152,6 +241,52 @@ describe('New Frontend Components & Hooks', () => {
       expect(stored).toContain('twitter');
 
       window.location = originalLocation as any;
+    });
+  });
+
+  describe('jobSessionStore', () => {
+    it('adds, updates, retrieves, and subscribes to session jobs', () => {
+      const sampleJob: SessionJob = {
+        jobId: 'session-job-1',
+        projectName: 'demo-repo',
+        bugReport: 'Fix off by one',
+        createdAt: '2026-10-30T10:00:00Z',
+        status: 'QUEUED',
+        verdict: null,
+        attemptCount: 0,
+        durationSeconds: null,
+        modelId: null,
+      };
+
+      const listener = vi.fn();
+      const unsubscribe = jobSessionStore.subscribe(listener);
+
+      expect(listener).toHaveBeenCalledWith([]);
+
+      jobSessionStore.addJob(sampleJob);
+      expect(jobSessionStore.getJobs().length).toBe(1);
+      expect(jobSessionStore.getJob('session-job-1')).toEqual(sampleJob);
+      expect(jobSessionStore.getLastJobId()).toBe('session-job-1');
+
+      // Update existing job
+      jobSessionStore.updateJob('session-job-1', {
+        status: 'COMPLETED',
+        verdict: 'VERIFIED',
+      });
+      expect(jobSessionStore.getJob('session-job-1')?.status).toBe('COMPLETED');
+      expect(jobSessionStore.getJob('session-job-1')?.verdict).toBe('VERIFIED');
+
+      // Update non-existing job
+      jobSessionStore.updateJob('non-existent', { status: 'FAILED' });
+
+      // Add duplicate jobId updates existing
+      jobSessionStore.addJob({
+        ...sampleJob,
+        status: 'FAILED',
+      });
+      expect(jobSessionStore.getJobs().length).toBe(1);
+
+      unsubscribe();
     });
   });
 });

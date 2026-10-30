@@ -1,3 +1,5 @@
+import React from 'react';
+
 export interface PillTabItem<T extends string = string> {
   id: T;
   label: string;
@@ -11,15 +13,35 @@ interface PillTabsProps<T extends string = string> {
 }
 
 export function PillTabs<T extends string = string>({ tabs, activeTab, onChange }: PillTabsProps<T>) {
+  const handleKeyDown = (e: React.KeyboardEvent, index: number) => {
+    if (e.key === 'ArrowRight') {
+      e.preventDefault();
+      const nextIndex = (index + 1) % tabs.length;
+      onChange(tabs[nextIndex].id);
+    } else if (e.key === 'ArrowLeft') {
+      e.preventDefault();
+      const prevIndex = (index - 1 + tabs.length) % tabs.length;
+      onChange(tabs[prevIndex].id);
+    }
+  };
+
   return (
-    <div className="flex flex-wrap items-center gap-1.5 p-1 bg-warm-pill dark:bg-dark-pill rounded-full border border-warm-border/60 dark:border-dark-border/60 max-w-fit">
-      {tabs.map((tab) => {
+    <div
+      role="tablist"
+      aria-label="Filter tabs"
+      className="flex flex-wrap items-center gap-1.5 p-1 bg-warm-pill dark:bg-dark-pill rounded-full border border-warm-border/60 dark:border-dark-border/60 max-w-fit"
+    >
+      {tabs.map((tab, idx) => {
         const isActive = tab.id === activeTab;
         return (
           <button
             key={tab.id}
+            role="tab"
+            aria-selected={isActive}
+            tabIndex={isActive ? 0 : -1}
             type="button"
             onClick={() => onChange(tab.id)}
+            onKeyDown={(e) => handleKeyDown(e, idx)}
             className={`inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-medium transition-all focus-visible:outline-2 ${
               isActive
                 ? 'bg-white dark:bg-dark-surface text-ink-primary dark:text-dark-ink-primary shadow-soft border border-warm-border dark:border-dark-border font-semibold'
