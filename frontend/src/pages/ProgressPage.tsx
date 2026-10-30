@@ -4,9 +4,11 @@ import { PageHeader } from '../components/PageHeader';
 import { StageTimeline } from '../components/StageTimeline';
 import { LogPanel } from '../components/LogPanel';
 import { Alert } from '../components/Alert';
+import { CopyButton } from '../components/CopyButton';
+import { Spinner } from '../components/Spinner';
 import { useJobPoller } from '../hooks/useJobPoller';
 import type { JobStatus } from '../types/api';
-import { Copy, Check, ArrowRight, Loader2, Clock, Terminal } from 'lucide-react';
+import { Check, ArrowRight, Clock, Terminal } from 'lucide-react';
 
 const TERMINAL_STATES = new Set<JobStatus>(['COMPLETED', 'FAILED', 'BLOCKED', 'CANCELLED']);
 
@@ -15,7 +17,6 @@ export function ProgressPage() {
   const navigate = useNavigate();
   const { status, result, error, loading } = useJobPoller(jobId ?? null);
 
-  const [copied, setCopied] = useState(false);
   const [startTime] = useState(() => Date.now());
   const [elapsed, setElapsed] = useState(0);
 
@@ -38,17 +39,6 @@ export function ProgressPage() {
     }
   }, [status, jobId, navigate]);
 
-  const handleCopyJobId = async () => {
-    if (!jobId) return;
-    try {
-      await navigator.clipboard.writeText(jobId);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // Ignore
-    }
-  };
-
   const isTerminal = status ? TERMINAL_STATES.has(status.status) : false;
 
   // Format events log
@@ -69,24 +59,12 @@ export function ProgressPage() {
         description="The automated repair orchestrator is inspecting the workspace, invoking NVIDIA models on Nebius Token Factory, and testing candidate patches."
         actions={
           jobId ? (
-            <button
-              type="button"
-              onClick={handleCopyJobId}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-warm-border bg-white text-xs font-mono text-ink-primary hover:border-[#D8D2CA] shadow-soft transition-colors"
-              title="Copy Job ID"
-            >
-              {copied ? (
-                <>
-                  <Check className="h-3 w-3 text-[#1E6B3C]" />
-                  <span className="text-[#1E6B3C]">Copied</span>
-                </>
-              ) : (
-                <>
-                  <Copy className="h-3 w-3 text-ink-muted" />
-                  <span>{jobId.slice(0, 8)}</span>
-                </>
-              )}
-            </button>
+            <CopyButton
+              text={jobId}
+              label={jobId.slice(0, 8)}
+              copiedLabel="Copied ID"
+              title="Copy full Job ID"
+            />
           ) : undefined
         }
       />
@@ -98,20 +76,20 @@ export function ProgressPage() {
       )}
 
       {/* Live Stage Progress Card */}
-      <div className="rounded-2xl border border-warm-border bg-white p-6 shadow-soft space-y-6">
-        <div className="flex items-center justify-between pb-4 border-b border-warm-border-subtle">
+      <div className="rounded-2xl border border-warm-border dark:border-dark-border bg-white dark:bg-dark-surface p-6 shadow-soft space-y-6">
+        <div className="flex items-center justify-between pb-4 border-b border-warm-border-subtle dark:border-dark-border-subtle">
           <div className="flex items-center gap-2">
             {!isTerminal ? (
-              <Loader2 className="h-4 w-4 animate-spin text-[#27618D]" strokeWidth={1.5} />
+              <Spinner size="sm" className="text-[#27618D] dark:text-sky-400" />
             ) : (
-              <Check className="h-4 w-4 text-[#1E6B3C]" strokeWidth={1.5} />
+              <Check className="h-4 w-4 text-[#1E6B3C] dark:text-emerald-400" strokeWidth={1.5} />
             )}
-            <span className="text-xs font-semibold text-ink-primary">
+            <span className="text-xs font-semibold text-ink-primary dark:text-dark-ink-primary">
               {status?.stage || 'Connecting to orchestrator…'}
             </span>
           </div>
-          <div className="flex items-center gap-1.5 text-xs text-ink-secondary font-mono">
-            <Clock className="h-3.5 w-3.5 text-ink-muted" />
+          <div className="flex items-center gap-1.5 text-xs text-ink-secondary dark:text-dark-ink-secondary font-mono">
+            <Clock className="h-3.5 w-3.5 text-ink-muted dark:text-dark-ink-muted" />
             <span>{elapsed}s elapsed</span>
           </div>
         </div>
@@ -126,17 +104,21 @@ export function ProgressPage() {
           />
         ) : loading ? (
           <div className="py-12 flex flex-col items-center justify-center gap-3 text-center">
-            <Loader2 className="h-6 w-6 animate-spin text-ink-muted" />
-            <p className="text-xs text-ink-secondary">Connecting to repair worker process…</p>
+            <Spinner size="md" />
+            <p className="text-xs text-ink-secondary dark:text-dark-ink-secondary">
+              Connecting to repair worker process…
+            </p>
           </div>
         ) : null}
 
         {isTerminal && (
-          <div className="pt-2 border-t border-warm-border-subtle flex items-center justify-between">
-            <span className="text-xs text-ink-secondary">Job complete. Ready to view test evidence.</span>
+          <div className="pt-2 border-t border-warm-border-subtle dark:border-dark-border-subtle flex items-center justify-between">
+            <span className="text-xs text-ink-secondary dark:text-dark-ink-secondary">
+              Job complete. Ready to view test evidence.
+            </span>
             <Link
               to={`/jobs/${jobId}/result`}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-ink-primary text-warm-bg text-xs font-semibold hover:bg-[#3D352F] shadow-soft transition-colors"
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-ink-primary dark:bg-dark-ink-primary text-warm-bg dark:text-dark-bg text-xs font-semibold hover:opacity-90 shadow-soft transition-colors"
             >
               <span>View Results</span>
               <ArrowRight className="h-3.5 w-3.5" />
@@ -148,8 +130,8 @@ export function ProgressPage() {
       {/* Live Event Stream Panel */}
       {status?.events && status.events.length > 0 && (
         <div className="space-y-2">
-          <div className="flex items-center gap-1.5 text-xs font-semibold text-ink-secondary px-1">
-            <Terminal className="h-3.5 w-3.5 text-ink-muted" />
+          <div className="flex items-center gap-1.5 text-xs font-semibold text-ink-secondary dark:text-dark-ink-secondary px-1">
+            <Terminal className="h-3.5 w-3.5 text-ink-muted dark:text-dark-ink-muted" />
             <span>Orchestrator Stage Event Stream</span>
           </div>
           <LogPanel

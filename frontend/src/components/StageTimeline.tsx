@@ -52,16 +52,16 @@ export function StageTimeline({
 }: StageTimelineProps) {
   return (
     <div className="space-y-4">
-      <div className="divide-y divide-warm-border-subtle">
+      <div className="divide-y divide-warm-border-subtle dark:divide-dark-border-subtle">
         {STAGES.map((stage, idx) => {
           const state = getStageState(stage.key, currentStatus);
 
           const icons = {
-            pending: <Circle className="h-4 w-4 text-ink-muted/50" strokeWidth={1.5} />,
-            active: <Loader2 className="h-4 w-4 text-[#27618D] animate-spin" strokeWidth={1.5} />,
-            completed: <CheckCircle2 className="h-4 w-4 text-[#1E6B3C]" strokeWidth={1.5} />,
-            failed: <XCircle className="h-4 w-4 text-[#9C2A2A]" strokeWidth={1.5} />,
-            blocked: <ShieldAlert className="h-4 w-4 text-[#5A534D]" strokeWidth={1.5} />,
+            pending: <Circle className="h-4 w-4 text-ink-muted/50 dark:text-dark-ink-muted/50" strokeWidth={1.5} />,
+            active: <Loader2 className="h-4 w-4 text-[#27618D] dark:text-sky-400 animate-spin" strokeWidth={1.5} />,
+            completed: <CheckCircle2 className="h-4 w-4 text-[#1E6B3C] dark:text-emerald-400" strokeWidth={1.5} />,
+            failed: <XCircle className="h-4 w-4 text-[#9C2A2A] dark:text-red-400" strokeWidth={1.5} />,
+            blocked: <ShieldAlert className="h-4 w-4 text-[#5A534D] dark:text-stone-400" strokeWidth={1.5} />,
           };
 
           const isCurrent = state === 'active';
@@ -69,50 +69,48 @@ export function StageTimeline({
           return (
             <div
               key={stage.key}
-              className={`flex items-start gap-3.5 py-3.5 transition-colors ${
-                isCurrent ? 'bg-[#FAF8F5] -mx-4 px-4 rounded-xl' : ''
-              }`}
+              className={`flex items-start gap-3.5 py-3.5 transition-colors ${isCurrent ? 'bg-[#FAF8F5] dark:bg-dark-card -mx-4 px-4 rounded-xl' : ''
+                }`}
             >
               <div className="mt-0.5 shrink-0">{icons[state]}</div>
 
               <div className="flex-1 min-w-0">
                 <div className="flex items-center justify-between gap-2">
                   <p
-                    className={`text-xs font-semibold ${
-                      state === 'active'
-                        ? 'text-ink-primary font-bold'
+                    className={`text-xs font-semibold ${state === 'active'
+                        ? 'text-ink-primary dark:text-dark-ink-primary font-bold'
                         : state === 'completed'
-                        ? 'text-ink-primary'
-                        : 'text-ink-muted'
-                    }`}
+                          ? 'text-ink-primary dark:text-dark-ink-primary'
+                          : 'text-ink-muted dark:text-dark-ink-muted'
+                      }`}
                   >
                     {idx + 1}. {stage.label}
                   </p>
 
                   {isCurrent && stageMessage && (
-                    <span className="text-[11px] text-[#27618D] bg-[#EEF5FA] px-2 py-0.5 rounded-full truncate max-w-xs border border-[#C8E1F3]">
+                    <span className="text-[11px] text-[#27618D] dark:text-sky-300 bg-[#EEF5FA] dark:bg-sky-950/40 px-2 py-0.5 rounded-full truncate max-w-xs border border-[#C8E1F3] dark:border-sky-900/50">
                       {stageMessage}
                     </span>
                   )}
                 </div>
 
-                <p className="text-[11px] text-ink-secondary mt-0.5">
+                <p className="text-[11px] text-ink-secondary dark:text-dark-ink-secondary mt-0.5">
                   {stage.description}
                 </p>
 
                 {isCurrent && (
-                  <div className="flex flex-wrap items-center gap-3 mt-2 text-[11px] text-ink-secondary pt-1 border-t border-warm-border/50">
+                  <div className="flex flex-wrap items-center gap-3 mt-2 text-[11px] text-ink-secondary dark:text-dark-ink-secondary pt-1 border-t border-warm-border/50 dark:border-dark-border/50">
                     {modelId && (
                       <span>
-                        Model: <span className="font-mono text-ink-primary">{modelId}</span>
+                        Model: <span className="font-mono text-ink-primary dark:text-dark-ink-primary">{modelId}</span>
                       </span>
                     )}
                     <span>
-                      Attempt: <span className="font-semibold text-ink-primary">{attemptNumber} of 2</span>
+                      Attempt: <span className="font-semibold text-ink-primary dark:text-dark-ink-primary">{attemptNumber} of 2</span>
                     </span>
                     {elapsedSeconds !== undefined && (
                       <span>
-                        Elapsed: <span className="font-mono text-ink-primary">{elapsedSeconds}s</span>
+                        Elapsed: <span className="font-mono text-ink-primary dark:text-dark-ink-primary">{elapsedSeconds}s</span>
                       </span>
                     )}
                   </div>
