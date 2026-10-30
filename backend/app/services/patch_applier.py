@@ -20,6 +20,7 @@ from typing import List, Tuple
 from app.core.config import settings
 from app.core.errors import ErrorCode, ProofPatchError
 from app.schemas.api import PatchProposal
+from app.services.test_integrity import is_protected_path, normalize_repo_path
 
 logger = logging.getLogger(__name__)
 
@@ -60,16 +61,25 @@ def hash_patch(patch_text: str) -> str:
 
 
 def _extract_changed_files_from_diff(diff_text: str) -> List[str]:
-    """Parse file paths from unified diff headers."""
+    """Parse all target and source file paths from unified diff headers."""
     files = []
     for line in diff_text.splitlines():
         if line.startswith("+++ "):
-            path = line[4:].strip()
-            # Strip b/ prefix if present
-            path = re.sub(r"^b/", "", path)
-            path = path.replace("\\", "/").strip()
-            if path and path != "/dev/null":
-                files.append(path)
+            p = line[4:].strip()
+            p = re.sub(r"^b/", "", p).split("\t")[0].strip().replace("\\", "/")
+            if p and p != "/dev/null":
+                files.append(normalize_repo_path(p))
+        elif line.startswith("--- "):
+            p = line[4:].strip()
+            p = re.sub(r"^a/", "", p).split("\t")[0].strip().replace("\\", "/")
+            if p and p != "/dev/null":
+                files.append(normalize_repo_path(p))
+        elif line.startswith("diff --git "):
+            parts = line.split()
+            for part in parts[2:]:
+                p = re.sub(r"^[ab]/", "", part).strip().replace("\\", "/")
+                if p and p != "/dev/null":
+                    files.append(normalize_repo_path(p))
     return list(dict.fromkeys(files))  # deduplicate, preserve order
 
 
@@ -113,6 +123,12 @@ def validate_patch(proposal: PatchProposal, workspace_path: Path) -> List[str]:
         )
 
     for path in changed_files:
+        if is_protected_path(path):
+            raise ProofPatchError(
+                code=ErrorCode.PATCH_REJECTED_PROTECTED_PATH,
+                message=f"Patch rejected: file '{path}' is a protected test or configuration file and cannot be modified. Test files are read-only; fix the source code.",
+                http_status=422,
+            )
         if not _is_safe_patch_target(path):
             raise ProofPatchError(
                 code=ErrorCode.PATCH_REJECTED,
@@ -202,16 +218,36 @@ def _apply_unified_diff(diff_text: str, working_dir: Path) -> None:
         new_header = lines[i].strip()
         i += 1
 
-        # Extract target path from +++ line
+        # Extract source and target paths
+        old_path = re.sub(r"^---\s+", "", old_header).strip()
+        old_path = re.sub(r"^a/", "", old_path).split("\t")[0].strip().replace("\\", "/")
         new_path = re.sub(r"^\+\+\+\s+", "", new_header).strip()
         new_path = re.sub(r"^b/", "", new_path).split("\t")[0].strip().replace("\\", "/")
 
-        if not _is_safe_patch_target(new_path):
-            raise ProofPatchError(
-                code=ErrorCode.PATCH_REJECTED,
-                message=f"Patch target path {new_path!r} is not safe.",
-                http_status=422,
-            )
+        for p_chk in (old_path, new_path):
+            if p_chk and p_chk != "/dev/null":
+                if is_protected_path(p_chk):
+                    raise ProofPatchError(
+                        code=ErrorCode.PATCH_REJECTED_PROTECTED_PATH,
+                        message=f"Patch rejected: file '{p_chk}' is a protected test or configuration file and cannot be modified. Test files are read-only; fix the source code.",
+                        http_status=422,
+                    )
+                if not _is_safe_patch_target(p_chk):
+                    raise ProofPatchError(
+                        code=ErrorCode.PATCH_REJECTED,
+                        message=f"Patch target path {p_chk!r} is not safe.",
+                        http_status=422,
+                    )
+
+        if new_path == "/dev/null":
+            # File deletion
+            del_target = working_dir / old_path
+            if del_target.exists():
+                del_target.unlink()
+            # Skip any hunk processing for deleted file
+            while i < n and (lines[i].startswith("@@") or not (lines[i].startswith("---") or lines[i].startswith("diff "))):
+                i += 1
+            continue
 
         target_file = working_dir / new_path
         try:
