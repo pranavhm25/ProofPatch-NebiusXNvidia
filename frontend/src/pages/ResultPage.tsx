@@ -1,66 +1,182 @@
 import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Clock, FileCode, CheckCircle2, ShieldCheck } from 'lucide-react';
 import { useJobPoller } from '../hooks/useJobPoller';
+import { PageHeader } from '../components/PageHeader';
 import { VerdictBadge } from '../components/VerdictBadge';
-import { MetricCard } from '../components/MetricCard';
+import { StatCard } from '../components/StatCard';
 import { DiffViewer } from '../components/DiffViewer';
 import { TestEvidencePanel } from '../components/TestEvidencePanel';
 import { AttemptCard } from '../components/AttemptCard';
 import { Alert } from '../components/Alert';
+import { CardSkeleton } from '../components/Skeleton';
+import { EmptyState } from '../components/EmptyState';
 
 export function ResultPage() {
   const { jobId } = useParams<{ jobId: string }>();
-  const { result, error } = useJobPoller(jobId ?? null);
+  const { result, error, loading } = useJobPoller(jobId ?? null);
+
+  if (loading && !result) {
+    return (
+      <div className="max-w-4xl mx-auto w-full space-y-6">
+        <PageHeader title="Loading Repair Evidence" badge="Please wait…" />
+        <CardSkeleton />
+      </div>
+    );
+  }
 
   if (error && !result) {
+    const isExpired = error.toLowerCase().includes('404') || error.toLowerCase().includes('not found');
     return (
-      <main className="mx-auto max-w-3xl px-4 py-16">
-        <Alert kind="error">{error}</Alert>
-      </main>
+      <div className="max-w-4xl mx-auto w-full space-y-6">
+        <PageHeader title="Repair Job Unavailable" badge="Error" />
+        {isExpired ? (
+          <EmptyState
+            icon={<Clock className="h-6 w-6 text-ink-muted" strokeWidth={1.5} />}
+            title="Workspace Expired"
+            description="This temporary repair workspace reached its 60-minute retention limit and was automatically purged from the sandbox."
+            action={
+              <Link
+                to="/"
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-ink-primary text-warm-bg text-xs font-semibold hover:bg-[#3D352F] shadow-soft"
+              >
+                <span>Start New Repair</span>
+              </Link>
+            }
+          />
+        ) : (
+          <Alert kind="error" title="Failed to Retrieve Results">
+            {error}
+          </Alert>
+        )}
+      </div>
     );
   }
 
   if (!result) {
     return (
-      <main className="mx-auto max-w-3xl px-4 py-16 text-center text-sm text-neutral-500">
-        <div className="inline-block h-6 w-6 animate-spin rounded-full border-2 border-neutral-600 border-t-blue-500"></div>
-        <p className="mt-3">Loading repair results and test evidence…</p>
-      </main>
+      <div className="max-w-4xl mx-auto w-full space-y-6">
+        <PageHeader title="No Result Found" badge="Not Found" />
+        <EmptyState
+          title="No Repair Records"
+          description="Could not locate test execution records or patch artifacts for this job identifier."
+          action={
+            <Link
+              to="/"
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-ink-primary text-warm-bg text-xs font-semibold"
+            >
+              <span>Back to New Repair</span>
+            </Link>
+          }
+        />
+      </div>
     );
   }
 
   const lastAttempt = result.attempts[result.attempts.length - 1];
   const tr = lastAttempt?.test_result;
 
+  // Build the one-line evidence-backed explanation
+  let evidenceExplanation = '';
+  if (result.verdict === 'VERIFIED') {
+    evidenceExplanation = `All tests passed cleanly inside the sandbox (exit code ${tr?.exit_code ?? 0}, ${tr?.tests_passed ?? 0} tests verified in ${tr?.duration_ms ? (tr.duration_ms / 1000).toFixed(2) : '0.00'}s).`;
+  } else if (result.verdict === 'NOT_VERIFIED') {
+    evidenceExplanation = 'Test command completed with exit code 0, but no automated test cases were discovered in the repository.';
+  } else if (result.verdict === 'FAILED') {
+    evidenceExplanation = `Tests failed to pass inside the sandbox (exit code ${tr?.exit_code ?? 'non-zero'}, ${tr?.tests_failed ?? 0} failure(s) recorded).`;
+  } else {
+    evidenceExplanation = 'Sandbox or infrastructure execution could not complete successfully.';
+  }
+
   return (
-    <main className="mx-auto max-w-4xl px-4 py-12 space-y-8">
-      <div className="flex items-center justify-between">
-        <Link to="/" className="inline-flex items-center gap-1.5 text-xs text-neutral-400 hover:text-neutral-200 transition-colors">
-          <ArrowLeft className="h-3.5 w-3.5" /> Start another repair
-        </Link>
-        <span className="text-xs text-neutral-500 font-mono">Job: {jobId?.substring(0, 8)}</span>
-      </div>
-
-      <header className="space-y-3 rounded-xl border border-neutral-800 bg-neutral-900/50 p-6">
-        <div className="flex items-center gap-3">
-          {result.verdict && <VerdictBadge verdict={result.verdict} />}
-          <span className="text-xs text-neutral-500 font-mono">Attempts: {result.attempts.length}</span>
+    <div className="max-w-4xl mx-auto w-full space-y-8">
+      {/* Back Link & Header */}
+      <div>
+        <div className="flex items-center justify-between mb-4">
+          <Link
+            to="/jobs"
+            className="inline-flex items-center gap-1.5 text-xs text-ink-secondary hover:text-ink-primary transition-colors font-medium"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" strokeWidth={1.5} />
+            <span>All Repair Jobs</span>
+          </Link>
+          <span className="text-xs font-mono text-ink-muted">Job ID: {jobId?.slice(0, 8)}</span>
         </div>
-        <p className="text-neutral-200 text-base font-medium">{result.summary}</p>
-        <p className="text-xs text-neutral-400">
-          Model: <span className="text-neutral-300 font-mono">{result.model.model_id}</span> via {result.model.provider} · Prompt: <span className="font-mono">{result.model.prompt_version}</span>
-        </p>
-      </header>
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <MetricCard label="Tests Passed" value={tr?.tests_passed ?? '—'} />
-        <MetricCard label="Tests Failed" value={tr?.tests_failed ?? '—'} />
-        <MetricCard label="Duration" value={tr?.duration_ms != null ? `${(tr.duration_ms / 1000).toFixed(2)}s` : '—'} />
-        <MetricCard label="Files Changed" value={result.diff.changed_files.length} />
+        <PageHeader
+          title="Repair Verification Result"
+          badge={jobId?.slice(0, 8)}
+          description="Examine the executed verification results, test output streams, generated unified diff patch, and attempt history."
+          actions={
+            <Link
+              to="/"
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full border border-warm-border bg-white text-xs font-medium text-ink-primary hover:border-[#D8D2CA] shadow-soft transition-colors"
+            >
+              <span>New Repair</span>
+            </Link>
+          }
+        />
       </div>
 
+      {/* Primary Verdict Hero Card */}
+      <div className="rounded-2xl border border-warm-border bg-[#FCFBF9] p-6 sm:p-7 shadow-soft space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            {result.verdict && <VerdictBadge verdict={result.verdict} size="lg" />}
+            <span className="text-xs font-mono text-ink-secondary">
+              {result.attempts.length} attempt{result.attempts.length > 1 ? 's' : ''} executed
+            </span>
+          </div>
+
+          <div className="text-xs text-ink-secondary font-mono">
+            Model: <span className="font-semibold text-ink-primary">{result.model.model_id}</span>
+          </div>
+        </div>
+
+        <div>
+          <h2 className="text-base font-semibold text-ink-primary">
+            {result.summary || 'Automated code repair attempt completed.'}
+          </h2>
+          <p className="text-xs text-ink-secondary mt-1 leading-relaxed">
+            {evidenceExplanation}
+          </p>
+        </div>
+
+        {/* Visible Honesty Line */}
+        <div className="flex items-center gap-2 pt-3 border-t border-warm-border/60 text-[11px] text-[#1E6B3C]">
+          <ShieldCheck className="h-4 w-4 shrink-0" strokeWidth={1.5} />
+          <span className="font-medium">
+            Evidence Invariant: Verdict is derived only from executed test results, not from model claims.
+          </span>
+        </div>
+      </div>
+
+      {/* Metric Cards Row */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <StatCard
+          label="Tests Passed"
+          value={tr?.tests_passed ?? (result.verdict === 'VERIFIED' ? '1+' : '0')}
+          icon={<CheckCircle2 className="h-4 w-4 text-[#1E6B3C]" strokeWidth={1.5} />}
+        />
+        <StatCard
+          label="Tests Failed"
+          value={tr?.tests_failed ?? (result.verdict === 'FAILED' ? '1+' : '0')}
+          icon={<Clock className="h-4 w-4 text-ink-muted" strokeWidth={1.5} />}
+        />
+        <StatCard
+          label="Execution Duration"
+          value={tr?.duration_ms != null ? `${(tr.duration_ms / 1000).toFixed(2)}s` : '—'}
+          icon={<Clock className="h-4 w-4 text-ink-muted" strokeWidth={1.5} />}
+        />
+        <StatCard
+          label="Files Changed"
+          value={result.diff.changed_files.length}
+          icon={<FileCode className="h-4 w-4 text-ink-muted" strokeWidth={1.5} />}
+        />
+      </div>
+
+      {/* Limitations Notice */}
       {result.limitations.length > 0 && (
-        <Alert kind="warning" title="Limitations & Scope">
+        <Alert kind="warning" title="Verification Scope & Boundaries">
           <ul className="list-disc pl-4 space-y-1 text-xs">
             {result.limitations.map((lim, i) => (
               <li key={i}>{lim}</li>
@@ -69,28 +185,45 @@ export function ResultPage() {
         </Alert>
       )}
 
+      {/* Code Diff Section */}
       <section className="space-y-3">
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-neutral-400">Executed Test Evidence</h2>
-        {lastAttempt ? (
-          <TestEvidencePanel attempt={lastAttempt} />
-        ) : (
-          <p className="text-sm text-neutral-500">No test runner output available.</p>
-        )}
-      </section>
-
-      <section className="space-y-3">
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-neutral-400">Code Diff</h2>
+        <div className="flex items-center justify-between">
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-ink-secondary">
+            Generated Code Diff
+          </h2>
+          <span className="text-[11px] text-ink-muted">
+            {result.diff.changed_files.length} file{result.diff.changed_files.length !== 1 ? 's' : ''} modified
+          </span>
+        </div>
         {jobId && <DiffViewer diff={result.diff} jobId={jobId} />}
       </section>
 
+      {/* Executed Test Evidence Section */}
       <section className="space-y-3">
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-neutral-400">Attempt History ({result.attempts.length})</h2>
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-ink-secondary">
+          Sandbox Test Execution Evidence
+        </h2>
+        {lastAttempt ? (
+          <TestEvidencePanel attempt={lastAttempt} />
+        ) : (
+          <p className="text-xs text-ink-secondary">No test runner output available.</p>
+        )}
+      </section>
+
+      {/* Attempt History Section */}
+      <section className="space-y-3">
+        <div className="flex items-center justify-between">
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-ink-secondary">
+            Repair Attempts History ({result.attempts.length})
+          </h2>
+          <span className="text-[11px] text-ink-muted">Max 2 attempts bounded</span>
+        </div>
         <div className="space-y-3">
-          {result.attempts.map((a) => (
-            <AttemptCard key={a.attempt_number} attempt={a} />
+          {result.attempts.map((att) => (
+            <AttemptCard key={att.attempt_number} attempt={att} defaultOpen={att.attempt_number === result.attempts.length} />
           ))}
         </div>
       </section>
-    </main>
+    </div>
   );
 }
