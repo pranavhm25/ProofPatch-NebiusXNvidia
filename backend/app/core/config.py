@@ -26,12 +26,12 @@ class Settings(BaseModel):
     nebius_base_url: str = Field(default_factory=lambda: os.getenv("NEBIUS_BASE_URL", "https://api.tokenfactory.nebius.com/v1"))
 
     # Legacy single-model variable remains as a migration fallback.
-    nebius_model: str = Field(default_factory=lambda: os.getenv("NEBIUS_MODEL", ""))
+    nebius_model: str = Field(default_factory=lambda: os.getenv("NEBIUS_MODEL", "nvidia/Nemotron-3-Ultra-550b-a55b"))
 
     # Role-based models and explicit, non-advanced fallback order.
-    nebius_model_fast: str = Field(default_factory=lambda: os.getenv("NEBIUS_MODEL_FAST", ""))
-    nebius_model_reasoning: str = Field(default_factory=lambda: os.getenv("NEBIUS_MODEL_REASONING", ""))
-    nebius_model_advanced: str = Field(default_factory=lambda: os.getenv("NEBIUS_MODEL_ADVANCED", ""))
+    nebius_model_fast: str = Field(default_factory=lambda: os.getenv("NEBIUS_MODEL_FAST", "nvidia/Nemotron-3-Ultra-550b-a55b"))
+    nebius_model_reasoning: str = Field(default_factory=lambda: os.getenv("NEBIUS_MODEL_REASONING", "nvidia/Nemotron-3-Ultra-550b-a55b"))
+    nebius_model_advanced: str = Field(default_factory=lambda: os.getenv("NEBIUS_MODEL_ADVANCED", "nvidia/Nemotron-3-Ultra-550b-a55b"))
     nebius_model_fallback_roles: List[str] = Field(
         default_factory=lambda: _get_list("NEBIUS_MODEL_FALLBACK_ROLES", ["reasoning", "fast"])
     )
