@@ -275,3 +275,113 @@ def test_no_newline_at_eof(tmp_path: Path):
 
     result_text = (working_copy / "nonl.py").read_text()
     assert result_text == "line_1\nline_2_patched"
+
+
+def test_hunk_tolerant_wrong_context_unique_anchor_applies(tmp_path: Path):
+    """Fix B: When context lines hallucinate but '-' line is a unique anchor, patch applies cleanly."""
+    baseline = tmp_path / "baseline_fix_b"
+    baseline.mkdir()
+    src_file = baseline / "service.py"
+    src_file.write_text(
+        "def compute_score(user_id: int) -> int:\n"
+        "    # Real production comment\n"
+        "    raw_score = fetch_score(user_id)\n"
+        "    final_score = raw_score * 2\n"
+        "    return final_score\n"
+    )
+
+    working_copy = tmp_path / "working_copy_fix_b"
+
+    # Context lines are completely hallucinated by model, but '-' line is unique
+    patch_text = """--- a/service.py
++++ b/service.py
+@@ -1,5 +1,5 @@
+ def calculate_user_points(uid: str):
+     # Hallucinated comment from LLM
+-    final_score = raw_score * 2
++    final_score = raw_score * 3
+     return result_score_wrong
+"""
+    proposal = PatchProposal(
+        summary="Update multiplier with hallucinated context lines",
+        patch=patch_text,
+        files_expected_to_change=["service.py"],
+    )
+
+    apply_patch_to_copy(baseline, working_copy, proposal)
+
+    result_code = (working_copy / "service.py").read_text()
+    assert "def compute_score(user_id: int) -> int:" in result_code
+    assert "# Real production comment" in result_code
+    assert "final_score = raw_score * 3" in result_code
+    assert "calculate_user_points" not in result_code  # Model hallucination was not injected!
+
+
+def test_hunk_tolerant_ambiguous_anchor_refuses(tmp_path: Path):
+    """Fix B Safety: When '-' line appears at multiple locations and context mismatches, refuse."""
+    baseline = tmp_path / "baseline_ambig"
+    baseline.mkdir()
+    src_file = baseline / "ambig.py"
+    src_file.write_text(
+        "def step_one():\n"
+        "    value = 0\n"
+        "    return value\n\n"
+        "def step_two():\n"
+        "    value = 0\n"
+        "    return value\n"
+    )
+
+    working_copy = tmp_path / "working_copy_ambig"
+
+    # Model context mismatches and '-' line '    value = 0' appears twice
+    patch_text = """--- a/ambig.py
++++ b/ambig.py
+@@ -1,3 +1,3 @@
+ def wrong_function():
+-    value = 0
++    value = 42
+     return value_wrong
+"""
+    proposal = PatchProposal(
+        summary="Ambiguous patch application",
+        patch=patch_text,
+        files_expected_to_change=["ambig.py"],
+    )
+
+    with pytest.raises(ProofPatchError) as exc_info:
+        apply_patch_to_copy(baseline, working_copy, proposal)
+
+    assert exc_info.value.code == ErrorCode.PATCH_APPLY_FAILED
+    assert "Ambiguous patch anchor" in exc_info.value.message
+    assert "refusing ambiguous application" in exc_info.value.message
+    assert not working_copy.exists()
+
+
+def test_hunk_tolerant_removed_lines_mismatch_refuses(tmp_path: Path):
+    """Fix B Safety: When '-' lines are not found anywhere in the file, refuse."""
+    baseline = tmp_path / "baseline_no_anchor"
+    baseline.mkdir()
+    src_file = baseline / "code.py"
+    src_file.write_text("def run():\n    return 42\n")
+
+    working_copy = tmp_path / "working_copy_no_anchor"
+
+    patch_text = """--- a/code.py
++++ b/code.py
+@@ -1,2 +1,2 @@
+ def run():
+-    totally_nonexistent_line_to_remove()
++    return 100
+"""
+    proposal = PatchProposal(
+        summary="Removed line does not exist",
+        patch=patch_text,
+        files_expected_to_change=["code.py"],
+    )
+
+    with pytest.raises(ProofPatchError) as exc_info:
+        apply_patch_to_copy(baseline, working_copy, proposal)
+
+    assert exc_info.value.code == ErrorCode.PATCH_APPLY_FAILED
+    assert "removed lines in hunk" in exc_info.value.message
+    assert not working_copy.exists()

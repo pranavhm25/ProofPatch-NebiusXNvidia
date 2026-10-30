@@ -317,28 +317,59 @@ def _apply_hunks(
                     match_pos = cand2
                     break
 
-        if match_pos is None:
-            raise ProofPatchError(
-                code=ErrorCode.PATCH_APPLY_FAILED,
-                message=f"Context mismatch in {filename}: hunk at line {old_start} does not match original file content.",
-                http_status=422,
-            )
+        if match_pos is not None:
+            # Exact match found (standard behavior)
+            result.extend(original[orig_idx:match_pos])
+            curr_orig = match_pos
 
-        # Copy unchanged lines preceding this hunk
-        result.extend(original[orig_idx:match_pos])
-        curr_orig = match_pos
+            for op, text in parsed_ops:
+                if op == " ":
+                    # Preserve original context line and its exact newline style
+                    result.append(original[curr_orig])
+                    curr_orig += 1
+                elif op == "-":
+                    curr_orig += 1
+                elif op == "+":
+                    result.append(text)
 
-        for op, text in parsed_ops:
-            if op == " ":
-                # Preserve original context line and its exact newline style
-                result.append(original[curr_orig])
-                curr_orig += 1
-            elif op == "-":
-                curr_orig += 1
-            elif op == "+":
-                result.append(text)
+            orig_idx = curr_orig
+        else:
+            # Fix B: Anchor on '-' lines when context lines mismatch or hallucinate
+            removed_lines = [text for op, text in parsed_ops if op == "-"]
+            if not removed_lines:
+                raise ProofPatchError(
+                    code=ErrorCode.PATCH_APPLY_FAILED,
+                    message=f"Context mismatch in {filename}: hunk at line {old_start} does not match original file content.",
+                    http_status=422,
+                )
 
-        orig_idx = curr_orig
+            # Search for occurrences of removed_lines in original[orig_idx:]
+            rem_len = len(removed_lines)
+            matches = []
+            for pos in range(orig_idx, len(original) - rem_len + 1):
+                if all(original[pos + k].rstrip("\r\n") == removed_lines[k].rstrip("\r\n") for k in range(rem_len)):
+                    matches.append(pos)
+
+            if len(matches) == 0:
+                raise ProofPatchError(
+                    code=ErrorCode.PATCH_APPLY_FAILED,
+                    message=f"Context mismatch in {filename}: removed lines in hunk at line {old_start} were not found in original file.",
+                    http_status=422,
+                )
+            if len(matches) > 1:
+                raise ProofPatchError(
+                    code=ErrorCode.PATCH_APPLY_FAILED,
+                    message=f"Ambiguous patch anchor in {filename}: removed lines match {len(matches)} locations; refusing ambiguous application.",
+                    http_status=422,
+                )
+
+            # Unique anchor found: apply replacement at anchor_pos
+            anchor_pos = matches[0]
+            result.extend(original[orig_idx:anchor_pos])
+            for op, text in parsed_ops:
+                if op == "+":
+                    result.append(text)
+            orig_idx = anchor_pos + rem_len
 
     # Copy remaining unchanged lines after the last hunk
     result.extend(original[orig_idx:])

@@ -67,16 +67,16 @@ def test_retry_on_patch_apply_failure_reaches_verified(tmp_path: Path):
         verification_strategy=["pytest tests/test_calculator.py"],
     )
 
-    # Attempt 1: Context mismatch on original source line
+    # Attempt 1: Context and removed lines mismatch so it fails application
     bad_patch = PatchProposal(
-        summary="Bad patch with context mismatch",
+        summary="Bad patch with context and anchor mismatch",
         patch=(
             "--- a/src/calculator.py\n"
             "+++ b/src/calculator.py\n"
             "@@ -1,3 +1,3 @@\n"
             " def wrong_signature(n: int) -> int:\n"
             '     """Return the absolute value of an integer."""\n'
-            "-    return n\n"
+            "-    return non_existent_variable\n"
             "+    return -n if n < 0 else n\n"
         ),
         files_expected_to_change=["src/calculator.py"],
@@ -176,14 +176,14 @@ def test_retry_on_patch_apply_failure_bounded_exhaustion(tmp_path: Path):
     )
 
     bad_patch = PatchProposal(
-        summary="Bad patch with context mismatch",
+        summary="Bad patch with context and anchor mismatch",
         patch=(
             "--- a/src/calculator.py\n"
             "+++ b/src/calculator.py\n"
             "@@ -1,3 +1,3 @@\n"
             " def wrong_signature(n: int) -> int:\n"
             '     """Return the absolute value of an integer."""\n'
-            "-    return n\n"
+            "-    return non_existent_variable\n"
             "+    return -n if n < 0 else n\n"
         ),
         files_expected_to_change=["src/calculator.py"],
