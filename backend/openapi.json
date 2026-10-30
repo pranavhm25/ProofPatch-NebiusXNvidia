@@ -1,0 +1,1088 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "ProofPatch API",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/health": {
+      "get": {
+        "tags": [
+          "Health"
+        ],
+        "summary": "Health Check",
+        "description": "Application health endpoint.",
+        "operationId": "health_check_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects": {
+      "post": {
+        "tags": [
+          "Projects"
+        ],
+        "summary": "Create Project",
+        "description": "Upload and validate a Python project ZIP archive.",
+        "operationId": "create_project_api_projects_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_create_project_api_projects_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateProjectResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/jobs": {
+      "post": {
+        "tags": [
+          "Jobs"
+        ],
+        "summary": "Create Job",
+        "description": "Start an automated repair job for an uploaded project.",
+        "operationId": "create_job_api_jobs_post",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateJobRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateJobResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Jobs"
+        ],
+        "summary": "List Jobs",
+        "description": "List historical repair jobs with filtering and pagination.",
+        "operationId": "list_jobs_api_jobs_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "Offset"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "name": "verdict",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Verdict"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/jobs/{job_id}": {
+      "get": {
+        "tags": [
+          "Jobs"
+        ],
+        "summary": "Get Job Status",
+        "description": "Poll job status, stage, and event history.",
+        "operationId": "get_job_status_api_jobs__job_id__get",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobStatusResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/jobs/{job_id}/result": {
+      "get": {
+        "tags": [
+          "Jobs"
+        ],
+        "summary": "Get Job Result",
+        "description": "Retrieve full repair results, diff, test evidence, and verdict.",
+        "operationId": "get_job_result_api_jobs__job_id__result_get",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobResultResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/jobs/{job_id}/download": {
+      "get": {
+        "tags": [
+          "Downloads"
+        ],
+        "summary": "Download Artifact",
+        "description": "Download repair artifacts (unified diff patch or patched repository ZIP).",
+        "operationId": "download_artifact_api_jobs__job_id__download_get",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^(patch|zip)$",
+              "default": "patch",
+              "title": "Format"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AttemptSchema": {
+        "properties": {
+          "attempt_number": {
+            "type": "integer",
+            "title": "Attempt Number"
+          },
+          "status": {
+            "$ref": "#/components/schemas/AttemptStatus"
+          },
+          "patch_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Patch Hash"
+          },
+          "changed_files": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Changed Files"
+          },
+          "test_result": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TestResultSchema"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "attempt_number",
+          "status",
+          "patch_hash",
+          "changed_files",
+          "test_result"
+        ],
+        "title": "AttemptSchema"
+      },
+      "AttemptStatus": {
+        "type": "string",
+        "enum": [
+          "PLANNED",
+          "PATCH_REJECTED",
+          "PATCH_APPLIED",
+          "PATCH_APPLY_FAILED",
+          "TESTED",
+          "FAILED",
+          "TIMED_OUT",
+          "BLOCKED"
+        ],
+        "title": "AttemptStatus"
+      },
+      "Body_create_project_api_projects_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "File"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_create_project_api_projects_post"
+      },
+      "CreateJobRequest": {
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "title": "Project Id"
+          },
+          "bug_report": {
+            "type": "string",
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Bug Report"
+          },
+          "expected_behavior": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Behavior"
+          },
+          "observed_behavior": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observed Behavior"
+          },
+          "idempotency_key": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Idempotency Key"
+          }
+        },
+        "type": "object",
+        "required": [
+          "project_id",
+          "bug_report"
+        ],
+        "title": "CreateJobRequest"
+      },
+      "CreateJobResponse": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "title": "Job Id"
+          },
+          "status": {
+            "$ref": "#/components/schemas/JobStatus"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          },
+          "status_url": {
+            "type": "string",
+            "title": "Status Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_id",
+          "status",
+          "created_at",
+          "status_url"
+        ],
+        "title": "CreateJobResponse"
+      },
+      "CreateProjectResponse": {
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "title": "Project Id"
+          },
+          "project_name": {
+            "type": "string",
+            "title": "Project Name"
+          },
+          "language": {
+            "type": "string",
+            "title": "Language"
+          },
+          "file_count": {
+            "type": "integer",
+            "title": "File Count"
+          },
+          "total_uncompressed_bytes": {
+            "type": "integer",
+            "title": "Total Uncompressed Bytes"
+          },
+          "validation_status": {
+            "type": "string",
+            "title": "Validation Status"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "project_id",
+          "project_name",
+          "language",
+          "file_count",
+          "total_uncompressed_bytes",
+          "validation_status",
+          "created_at"
+        ],
+        "title": "CreateProjectResponse"
+      },
+      "DiffInfoSchema": {
+        "properties": {
+          "available": {
+            "type": "boolean",
+            "title": "Available"
+          },
+          "unified_diff": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unified Diff"
+          },
+          "changed_files": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Changed Files"
+          },
+          "download_patch_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Download Patch Url"
+          },
+          "download_zip_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Download Zip Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "available",
+          "unified_diff",
+          "changed_files",
+          "download_patch_url",
+          "download_zip_url"
+        ],
+        "title": "DiffInfoSchema"
+      },
+      "FinalVerdict": {
+        "type": "string",
+        "enum": [
+          "VERIFIED",
+          "NOT_VERIFIED",
+          "FAILED",
+          "BLOCKED"
+        ],
+        "title": "FinalVerdict"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "HealthResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "default": "ok"
+          },
+          "version": {
+            "type": "string",
+            "title": "Version",
+            "default": "1.0.0"
+          },
+          "environment": {
+            "type": "string",
+            "title": "Environment"
+          },
+          "has_nebius_config": {
+            "type": "boolean",
+            "title": "Has Nebius Config"
+          }
+        },
+        "type": "object",
+        "required": [
+          "environment",
+          "has_nebius_config"
+        ],
+        "title": "HealthResponse"
+      },
+      "JobEvent": {
+        "properties": {
+          "timestamp": {
+            "type": "string",
+            "title": "Timestamp"
+          },
+          "stage": {
+            "type": "string",
+            "title": "Stage"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "timestamp",
+          "stage",
+          "message"
+        ],
+        "title": "JobEvent"
+      },
+      "JobListItem": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "title": "Job Id"
+          },
+          "project_id": {
+            "type": "string",
+            "title": "Project Id"
+          },
+          "project_name": {
+            "type": "string",
+            "title": "Project Name"
+          },
+          "bug_report": {
+            "type": "string",
+            "title": "Bug Report"
+          },
+          "status": {
+            "$ref": "#/components/schemas/JobStatus"
+          },
+          "stage": {
+            "type": "string",
+            "title": "Stage"
+          },
+          "verdict": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FinalVerdict"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "attempt_count": {
+            "type": "integer",
+            "title": "Attempt Count"
+          },
+          "model_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Id"
+          },
+          "duration_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Seconds"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_id",
+          "project_id",
+          "project_name",
+          "bug_report",
+          "status",
+          "stage",
+          "attempt_count",
+          "created_at"
+        ],
+        "title": "JobListItem"
+      },
+      "JobListResponse": {
+        "properties": {
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "jobs": {
+            "items": {
+              "$ref": "#/components/schemas/JobListItem"
+            },
+            "type": "array",
+            "title": "Jobs"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total",
+          "jobs"
+        ],
+        "title": "JobListResponse"
+      },
+      "JobResultResponse": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "title": "Job Id"
+          },
+          "status": {
+            "$ref": "#/components/schemas/JobStatus"
+          },
+          "verdict": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FinalVerdict"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "summary": {
+            "type": "string",
+            "title": "Summary"
+          },
+          "limitations": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Limitations"
+          },
+          "model": {
+            "$ref": "#/components/schemas/ModelAttributionSchema"
+          },
+          "attempts": {
+            "items": {
+              "$ref": "#/components/schemas/AttemptSchema"
+            },
+            "type": "array",
+            "title": "Attempts"
+          },
+          "diff": {
+            "$ref": "#/components/schemas/DiffInfoSchema"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_id",
+          "status",
+          "verdict",
+          "summary",
+          "limitations",
+          "model",
+          "attempts",
+          "diff",
+          "completed_at"
+        ],
+        "title": "JobResultResponse"
+      },
+      "JobStatus": {
+        "type": "string",
+        "enum": [
+          "QUEUED",
+          "VALIDATING",
+          "ANALYZING",
+          "PLANNING",
+          "PATCHING",
+          "TESTING",
+          "RETRYING",
+          "COMPLETED",
+          "FAILED",
+          "BLOCKED",
+          "CANCELLED"
+        ],
+        "title": "JobStatus"
+      },
+      "JobStatusResponse": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "title": "Job Id"
+          },
+          "status": {
+            "$ref": "#/components/schemas/JobStatus"
+          },
+          "stage": {
+            "type": "string",
+            "title": "Stage"
+          },
+          "progress_percent": {
+            "type": "integer",
+            "title": "Progress Percent"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "title": "Updated At"
+          },
+          "terminal": {
+            "type": "boolean",
+            "title": "Terminal"
+          },
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/JobEvent"
+            },
+            "type": "array",
+            "title": "Events"
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_id",
+          "status",
+          "stage",
+          "progress_percent",
+          "created_at",
+          "updated_at",
+          "terminal",
+          "events"
+        ],
+        "title": "JobStatusResponse"
+      },
+      "ModelAttributionSchema": {
+        "properties": {
+          "provider": {
+            "type": "string",
+            "title": "Provider"
+          },
+          "model_id": {
+            "type": "string",
+            "title": "Model Id"
+          },
+          "prompt_version": {
+            "type": "string",
+            "title": "Prompt Version"
+          }
+        },
+        "type": "object",
+        "required": [
+          "provider",
+          "model_id",
+          "prompt_version"
+        ],
+        "title": "ModelAttributionSchema"
+      },
+      "TestResultSchema": {
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/TestStatus"
+          },
+          "command_id": {
+            "type": "string",
+            "title": "Command Id"
+          },
+          "exit_code": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exit Code"
+          },
+          "duration_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Ms"
+          },
+          "tests_discovered": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tests Discovered"
+          },
+          "tests_passed": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tests Passed"
+          },
+          "tests_failed": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tests Failed"
+          },
+          "stdout": {
+            "type": "string",
+            "title": "Stdout"
+          },
+          "stderr": {
+            "type": "string",
+            "title": "Stderr"
+          },
+          "output_truncated": {
+            "type": "boolean",
+            "title": "Output Truncated"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "command_id",
+          "exit_code",
+          "duration_ms",
+          "tests_discovered",
+          "tests_passed",
+          "tests_failed",
+          "stdout",
+          "stderr",
+          "output_truncated"
+        ],
+        "title": "TestResultSchema"
+      },
+      "TestStatus": {
+        "type": "string",
+        "enum": [
+          "PASSED",
+          "FAILED",
+          "TIMED_OUT",
+          "ERROR",
+          "NOT_RUN",
+          "NO_TESTS"
+        ],
+        "title": "TestStatus"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    }
+  }
+}
