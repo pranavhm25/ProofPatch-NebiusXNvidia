@@ -21,6 +21,7 @@ export type AttemptStatus =
   | 'PLANNED'
   | 'PATCH_REJECTED'
   | 'PATCH_APPLIED'
+  | 'PATCH_APPLY_FAILED'
   | 'TESTED'
   | 'FAILED'
   | 'TIMED_OUT'
