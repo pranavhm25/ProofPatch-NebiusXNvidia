@@ -113,7 +113,20 @@ npm run dev
 ```
 Open [http://localhost:5173](http://localhost:5173) in your browser.
 
-### 3. Web UI & Evidence Interface
+### 3. Docker Compose (Single-Command Launch)
+Run the entire stack (backend API + production SPA reverse proxy) in containerized Linux with non-root security:
+```bash
+# Set your Nebius API Key in environment or .env
+export NEBIUS_API_KEY="your-api-key"
+
+# Build and start services
+docker compose up --build
+```
+- Frontend Web UI: [http://localhost:5173](http://localhost:5173)
+- Backend REST API: [http://localhost:8000](http://localhost:8000)
+- The backend executes inside Linux as unprivileged user `proofpatch` (`uid=10001, gid=10001`) with automatic healthchecks and POSIX resource limits (`RLIMIT_AS`, `RLIMIT_CPU`).
+
+### 4. Web UI & Evidence Interface
 ProofPatch features a warm, minimal, calm developer product aesthetic matching modern engineering standards:
 - **New Repair (/):** Drag-and-drop repository .zip archive upload (max 20 MB), natural language defect report with live character counter, optional diagnostics, and 1-click sample bug loader (Try Sample Bug).
 - **Jobs History (/jobs):** Filterable list of repair sessions (All, Verified, Running, Failed) with duration metrics, model attribution badges, and quick links.
