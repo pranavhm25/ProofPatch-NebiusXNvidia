@@ -164,6 +164,26 @@ class JobResultResponse(BaseModel):
     completed_at: Optional[str]
 
 
+class JobListItem(BaseModel):
+    job_id: str
+    project_id: str
+    project_name: str
+    bug_report: str
+    status: JobStatus
+    stage: str
+    verdict: Optional[FinalVerdict] = None
+    attempt_count: int
+    model_id: Optional[str] = None
+    duration_seconds: Optional[float] = None
+    created_at: str
+    completed_at: Optional[str] = None
+
+
+class JobListResponse(BaseModel):
+    total: int
+    jobs: List[JobListItem]
+
+
 # ── Model output schemas (validated before use) ───────────────────────────────
 
 class PlannedChange(BaseModel):
