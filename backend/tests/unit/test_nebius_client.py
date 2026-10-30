@@ -365,3 +365,62 @@ def test_revise_patch_on_apply_error_empty_context_raises():
     assert exc_info.value.code == ErrorCode.MODEL_OUTPUT_INVALID
     assert "No source files matched planned targets" in exc_info.value.message
 
+
+
+def test_extract_json_fenced_with_nested_objects():
+    raw_content = """Here is the plan:
+```json
+{
+  "summary": "Fix deep logic error",
+  "nested": {
+    "key1": "val1",
+    "key2": {"inner": [1, 2, 3]}
+  },
+  "notes": ["note 1", "note 2"]
+}
+```
+Hope this is helpful!"""
+    res = nebius_client._extract_json_from_response(raw_content)
+    assert res["summary"] == "Fix deep logic error"
+    assert res["nested"]["key2"]["inner"] == [1, 2, 3]
+
+
+def test_extract_json_with_surrounding_prose():
+    raw_content = """Here is the repaired unified diff patch in required JSON:
+```
+{
+  "summary": "Fix calc function",
+  "patch_format": "unified_diff",
+  "patch": "--- a/src/calc.py\n+++ b/src/calc.py\n@@ -1,1 +1,1 @@\n-return 1\n+return 2\n",
+  "files_expected_to_change": ["src/calc.py"]
+}
+```
+All tests should pass cleanly now."""
+    res = nebius_client._extract_json_from_response(raw_content)
+    assert res["summary"] == "Fix calc function"
+    assert "return 2" in res["patch"]
+
+
+def test_extract_json_unfenced_with_prose():
+    raw_content = """Sure! Here is the output:
+{
+  "summary": "Unfenced patch",
+  "patch_format": "unified_diff",
+  "patch": "diff content",
+  "files_expected_to_change": []
+}
+End of transmission."""
+    res = nebius_client._extract_json_from_response(raw_content)
+    assert res["summary"] == "Unfenced patch"
+
+
+def test_extract_json_invalid_raises_model_output_invalid():
+    with pytest.raises(ProofPatchError) as exc:
+        nebius_client._extract_json_from_response("I apologize, but I cannot repair this code.")
+    assert exc.value.code == ErrorCode.MODEL_OUTPUT_INVALID
+
+
+def test_extract_json_malformed_raises_model_output_invalid():
+    with pytest.raises(ProofPatchError) as exc:
+        nebius_client._extract_json_from_response("```json\n{ malformed json without quotes: 123 }\n```")
+    assert exc.value.code == ErrorCode.MODEL_OUTPUT_INVALID
