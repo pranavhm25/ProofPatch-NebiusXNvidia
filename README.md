@@ -127,7 +127,7 @@ sequenceDiagram
     participant Orch as Job Orchestrator
     participant Nebius as Nebius Token Factory (NVIDIA)
     participant Patch as Patch Applier
-    participant Box as Isolated Sandbox
+    participant Sandbox as Isolated Sandbox
     participant Verdict as Verdict Engine
 
     Dev->>UI: Upload ZIP archive & describe bug
@@ -146,11 +146,11 @@ sequenceDiagram
     end
 
     rect rgb(245, 255, 245)
-        Note over Orch,Box: Phase 2: Sandboxed Execution (Attempt 1)
+        Note over Orch,Sandbox: Phase 2: Sandboxed Execution (Attempt 1)
         Orch->>Patch: Apply patch to disposable copy
         Patch-->>Orch: Working copy patched
-        Orch->>Box: Run pytest under scrubbed env & limits
-        Box-->>Orch: Exit code, stdout/stderr, duration
+        Orch->>Sandbox: Run pytest under scrubbed env & limits
+        Sandbox-->>Orch: Exit code, stdout/stderr, duration
     end
 
     alt Test Execution Failed (Exit Code != 0) AND Retry Available
@@ -159,8 +159,8 @@ sequenceDiagram
             Orch->>Nebius: ADVANCED: Revise patch using actual failure stdout/stderr
             Nebius-->>Orch: Revised PatchProposal
             Orch->>Patch: Apply revised patch
-            Orch->>Box: Re-run pytest in fresh working copy
-            Box-->>Orch: Attempt 2 exit code & output
+            Orch->>Sandbox: Re-run pytest in fresh working copy
+            Sandbox-->>Orch: Attempt 2 exit code & output
         end
     end
 
