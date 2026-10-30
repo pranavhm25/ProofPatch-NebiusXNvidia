@@ -45,27 +45,27 @@ export function VerdictBadge({ verdict, size = 'md' }: VerdictBadgeProps) {
   const configs: Record<BadgeVerdict, BadgeConfig> = {
     VERIFIED: {
       label: 'Verified',
-      classes: 'bg-[#EAF5ED] text-[#1E6B3C] border-[#BDE3CA]',
+      classes: 'bg-[#EAF5ED] text-[#1E6B3C] border-[#BDE3CA] dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800',
       icon: <CheckCircle2 className={`${iconSizes[size]} shrink-0`} strokeWidth={1.5} />,
     },
     NOT_VERIFIED: {
       label: 'Not Verified',
-      classes: 'bg-[#FEF7EC] text-[#9A6218] border-[#F7DFC0]',
+      classes: 'bg-[#FEF7EC] text-[#9A6218] border-[#F7DFC0] dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800',
       icon: <AlertCircle className={`${iconSizes[size]} shrink-0`} strokeWidth={1.5} />,
     },
     FAILED: {
       label: 'Failed',
-      classes: 'bg-[#FDF2F2] text-[#9C2A2A] border-[#F6C8C8]',
+      classes: 'bg-[#FDF2F2] text-[#9C2A2A] border-[#F6C8C8] dark:bg-red-950/40 dark:text-red-300 dark:border-red-800',
       icon: <XCircle className={`${iconSizes[size]} shrink-0`} strokeWidth={1.5} />,
     },
     BLOCKED: {
       label: 'Blocked',
-      classes: 'bg-[#F4F1ED] text-[#5A534D] border-[#DDD7CF]',
+      classes: 'bg-[#F4F1ED] text-[#5A534D] border-[#DDD7CF] dark:bg-stone-900 dark:text-stone-300 dark:border-stone-800',
       icon: <ShieldAlert className={`${iconSizes[size]} shrink-0`} strokeWidth={1.5} />,
     },
     RUNNING: {
       label: 'Running',
-      classes: 'bg-[#EEF5FA] text-[#27618D] border-[#C8E1F3]',
+      classes: 'bg-[#EEF5FA] text-[#27618D] border-[#C8E1F3] dark:bg-sky-950/40 dark:text-sky-300 dark:border-sky-800',
       icon: <Loader2 className={`${iconSizes[size]} shrink-0 animate-spin`} strokeWidth={1.5} />,
     },
   };

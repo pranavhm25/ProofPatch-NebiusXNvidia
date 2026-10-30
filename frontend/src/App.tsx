@@ -1,15 +1,32 @@
-import React from 'react';
+import React, { Suspense, lazy } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { ToastProvider } from './components/Toast';
 import { AppLayout } from './components/layout/AppLayout';
-import { NewRepairPage } from './pages/NewRepairPage';
-import { ProgressPage } from './pages/ProgressPage';
-import { ResultPage } from './pages/ResultPage';
-import { JobsPage } from './pages/JobsPage';
-import { ModelsPage } from './pages/ModelsPage';
-import { SecurityPage } from './pages/SecurityPage';
-import { AboutPage } from './pages/AboutPage';
+import { PageSkeleton } from './components/Skeleton';
 import { jobSessionStore } from './lib/jobSessionStore';
+
+// Route-level code splitting with React.lazy
+const NewRepairPage = lazy(() =>
+  import('./pages/NewRepairPage').then((m) => ({ default: m.NewRepairPage }))
+);
+const ProgressPage = lazy(() =>
+  import('./pages/ProgressPage').then((m) => ({ default: m.ProgressPage }))
+);
+const ResultPage = lazy(() =>
+  import('./pages/ResultPage').then((m) => ({ default: m.ResultPage }))
+);
+const JobsPage = lazy(() =>
+  import('./pages/JobsPage').then((m) => ({ default: m.JobsPage }))
+);
+const ModelsPage = lazy(() =>
+  import('./pages/ModelsPage').then((m) => ({ default: m.ModelsPage }))
+);
+const SecurityPage = lazy(() =>
+  import('./pages/SecurityPage').then((m) => ({ default: m.SecurityPage }))
+);
+const AboutPage = lazy(() =>
+  import('./pages/AboutPage').then((m) => ({ default: m.AboutPage }))
+);
 
 function AppLayoutWrapper({ children }: { children: React.ReactNode }) {
   const location = useLocation();
@@ -25,16 +42,18 @@ export default function App() {
     <BrowserRouter>
       <ToastProvider>
         <AppLayoutWrapper>
-          <Routes>
-            <Route path="/" element={<NewRepairPage />} />
-            <Route path="/jobs" element={<JobsPage />} />
-            <Route path="/jobs/:jobId" element={<ProgressPage />} />
-            <Route path="/jobs/:jobId/result" element={<ResultPage />} />
-            <Route path="/models" element={<ModelsPage />} />
-            <Route path="/security" element={<SecurityPage />} />
-            <Route path="/about" element={<AboutPage />} />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
+          <Suspense fallback={<PageSkeleton />}>
+            <Routes>
+              <Route path="/" element={<NewRepairPage />} />
+              <Route path="/jobs" element={<JobsPage />} />
+              <Route path="/jobs/:jobId" element={<ProgressPage />} />
+              <Route path="/jobs/:jobId/result" element={<ResultPage />} />
+              <Route path="/models" element={<ModelsPage />} />
+              <Route path="/security" element={<SecurityPage />} />
+              <Route path="/about" element={<AboutPage />} />
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </Suspense>
         </AppLayoutWrapper>
       </ToastProvider>
     </BrowserRouter>

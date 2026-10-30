@@ -63,32 +63,36 @@ export function useToast() {
 
 function ToastItem({ toast, onClose }: { toast: Toast; onClose: () => void }) {
   const icons = {
-    success: <CheckCircle2 className="h-4 w-4 text-[#1E6B3C] shrink-0" strokeWidth={1.5} />,
-    error: <XCircle className="h-4 w-4 text-[#9C2A2A] shrink-0" strokeWidth={1.5} />,
-    warning: <AlertTriangle className="h-4 w-4 text-[#9A6218] shrink-0" strokeWidth={1.5} />,
-    info: <Info className="h-4 w-4 text-[#27618D] shrink-0" strokeWidth={1.5} />,
+    success: <CheckCircle2 className="h-4 w-4 text-[#1E6B3C] dark:text-emerald-400 shrink-0" strokeWidth={1.5} />,
+    error: <XCircle className="h-4 w-4 text-[#9C2A2A] dark:text-red-400 shrink-0" strokeWidth={1.5} />,
+    warning: <AlertTriangle className="h-4 w-4 text-[#9A6218] dark:text-amber-400 shrink-0" strokeWidth={1.5} />,
+    info: <Info className="h-4 w-4 text-[#27618D] dark:text-sky-400 shrink-0" strokeWidth={1.5} />,
   };
 
   const bgColors = {
-    success: 'bg-[#EAF5ED] border-[#BDE3CA] text-[#1E6B3C]',
-    error: 'bg-[#FDF2F2] border-[#F6C8C8] text-[#9C2A2A]',
-    warning: 'bg-[#FEF7EC] border-[#F7DFC0] text-[#9A6218]',
-    info: 'bg-[#EEF5FA] border-[#C8E1F3] text-[#27618D]',
+    success: 'bg-[#EAF5ED] dark:bg-emerald-950/40 border-[#BDE3CA] dark:border-emerald-800 text-[#1E6B3C] dark:text-emerald-300',
+    error: 'bg-[#FDF2F2] dark:bg-red-950/40 border-[#F6C8C8] dark:border-red-800 text-[#9C2A2A] dark:text-red-300',
+    warning: 'bg-[#FEF7EC] dark:bg-amber-950/40 border-[#F7DFC0] dark:border-amber-800 text-[#9A6218] dark:text-amber-300',
+    info: 'bg-[#EEF5FA] dark:bg-sky-950/40 border-[#C8E1F3] dark:border-sky-800 text-[#27618D] dark:text-sky-300',
   };
 
   return (
     <div
       role="status"
-      className={`pointer-events-auto flex items-start gap-3 rounded-2xl border p-4 shadow-card bg-white transition-all animate-in fade-in slide-in-from-bottom-2 ${bgColors[toast.type]}`}
+      className={`pointer-events-auto flex items-start gap-3 rounded-2xl border p-4 shadow-card bg-white dark:bg-dark-surface transition-all animate-in fade-in slide-in-from-bottom-2 ${bgColors[toast.type]}`}
     >
       {icons[toast.type]}
       <div className="flex-1 text-xs">
-        <p className="font-semibold text-[#2A2420]">{toast.title}</p>
-        {toast.message && <p className="mt-0.5 text-[#7A726B] leading-relaxed">{toast.message}</p>}
+        <p className="font-semibold text-[#2A2420] dark:text-dark-ink-primary">{toast.title}</p>
+        {toast.message && (
+          <p className="mt-0.5 text-[#7A726B] dark:text-dark-ink-secondary leading-relaxed">
+            {toast.message}
+          </p>
+        )}
       </div>
       <button
         onClick={onClose}
-        className="p-1 rounded-lg text-[#9E968F] hover:text-[#2A2420] hover:bg-[#F3EFEA] transition-colors"
+        className="p-1 rounded-lg text-[#9E968F] dark:text-dark-ink-muted hover:text-[#2A2420] dark:hover:text-dark-ink-primary hover:bg-[#F3EFEA] dark:hover:bg-dark-pill transition-colors focus-visible:outline-2"
         aria-label="Dismiss toast"
       >
         <X className="h-3.5 w-3.5" strokeWidth={1.5} />
@@ -96,4 +100,3 @@ function ToastItem({ toast, onClose }: { toast: Toast; onClose: () => void }) {
     </div>
   );
 }
-
