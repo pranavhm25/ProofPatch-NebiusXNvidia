@@ -245,6 +245,8 @@ def get_job_result(job_id: str):
     limitations = [
         "Passing tests provide evidence for tested behavior only; they do not prove the absence of all defects."
     ]
+    if stage and "Review recommended" in stage:
+        limitations.append("Review recommended: the patch adds a value that also appears in the tests. Passing tests do not prove the fix is general.")
 
     return JobResultResponse(
         job_id=job_id,

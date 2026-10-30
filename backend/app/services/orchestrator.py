@@ -23,6 +23,7 @@ from app.core.config import settings
 from app.core.errors import ErrorCode, ProofPatchError
 from app.db.database import get_connection
 from app.schemas.api import (
+    AttemptStatus,
     FinalVerdict,
     JobStatus,
     PatchProposal,
@@ -36,6 +37,7 @@ from app.services import (
     patch_applier,
     repo_inspector,
     sandbox,
+    test_integrity,
     verdict as verdict_svc,
 )
 from app.services.model_registry import ModelRole
@@ -143,6 +145,16 @@ def run_repair_job(job_id: str) -> None:
         update_job_status(job_id, JobStatus.ANALYZING, "Building context and inspecting source")
         context = repo_inspector.build_context(baseline_dir, inventory, bug_report)
 
+        # Anti-tampering baseline: record pristine test files hashes & test inventory
+        baseline_hashes = test_integrity.hash_protected_files(baseline_dir)
+        baseline_inventory = test_integrity.collect_baseline_test_inventory(baseline_dir)
+        logger.info(
+            "Job %s pristine baseline: %d protected test/config files, %d baseline tests collected",
+            job_id,
+            len(baseline_hashes),
+            len(baseline_inventory),
+        )
+
         # ── 2. PLANNING (Role: REASONING) ───────────────────────────────────────
         update_job_status(job_id, JobStatus.PLANNING, "Requesting repair plan from model")
         plan, plan_model = nebius_client.generate_plan(
@@ -154,6 +166,35 @@ def run_repair_job(job_id: str) -> None:
             role=ModelRole.REASONING,
         )
         models_used.append(plan_model)
+
+        # Validate RepairPlan against protected test files (tests are read-only)
+        violating_files = [
+            f for f in plan.target_files if test_integrity.is_protected_path(f)
+        ] + [
+            c.file for c in plan.planned_changes if test_integrity.is_protected_path(c.file)
+        ]
+        if violating_files:
+            logger.warning("Initial repair plan targeted protected files: %s; requesting replan", violating_files)
+            plan, plan_model = nebius_client.replan_with_feedback(
+                context=context,
+                bug_report=bug_report,
+                feedback="Repair plan rejected: test files are read-only and define the required behavior. Target only source code files; do not modify tests.",
+                expected_behavior=exp_behavior,
+                observed_behavior=obs_behavior,
+                job_id=job_id,
+                role=ModelRole.REASONING,
+            )
+            still_violating = [
+                f for f in plan.target_files if test_integrity.is_protected_path(f)
+            ] + [
+                c.file for c in plan.planned_changes if test_integrity.is_protected_path(c.file)
+            ]
+            if still_violating:
+                raise ProofPatchError(
+                    code=ErrorCode.PATCH_REJECTED_PROTECTED_PATH,
+                    message=f"Patch rejected: file '{still_violating[0]}' is a protected test or configuration file and cannot be modified. Test files are read-only; fix the source code.",
+                    http_status=422,
+                )
 
         # ── 3. ATTEMPT 1: PATCHING & TESTING (Role: REASONING) ──────────────────
         update_job_status(
@@ -188,6 +229,14 @@ def run_repair_job(job_id: str) -> None:
                 working_copy_path=attempt1_dir,
                 proposal=proposal,
             )
+            # Verify test integrity immediately after patch application
+            valid_post_patch, reason_post_patch = test_integrity.verify_test_integrity(baseline_hashes, attempt1_dir)
+            if not valid_post_patch:
+                raise ProofPatchError(
+                    code=ErrorCode.TEST_INTEGRITY_VIOLATION,
+                    message=f"Test integrity violation after patch application: {reason_post_patch}",
+                    http_status=422,
+                )
             cur.execute(
                 "UPDATE attempts SET status = 'PATCH_APPLIED', patch_hash = ?, changed_files_json = ? WHERE id = ?",
                 (patch_hash, json.dumps(changed_files), attempt1_id),
@@ -195,14 +244,19 @@ def run_repair_job(job_id: str) -> None:
             conn.commit()
             attempt1_applied = True
         except ProofPatchError as ppe:
-            if ppe.code == ErrorCode.PATCH_APPLY_FAILED and settings.max_repair_attempts > 1:
+            if ppe.code in (ErrorCode.PATCH_APPLY_FAILED, ErrorCode.PATCH_REJECTED_PROTECTED_PATH) and settings.max_repair_attempts > 1:
+                status_code_db = (
+                    AttemptStatus.PATCH_REJECTED.value
+                    if ppe.code == ErrorCode.PATCH_REJECTED_PROTECTED_PATH
+                    else AttemptStatus.PATCH_APPLY_FAILED.value
+                )
                 cur.execute(
-                    "UPDATE attempts SET status = 'PATCH_APPLY_FAILED', completed_at = ? WHERE id = ?",
-                    (_utc_now(), attempt1_id),
+                    "UPDATE attempts SET status = ?, completed_at = ? WHERE id = ?",
+                    (status_code_db, _utc_now(), attempt1_id),
                 )
                 conn.commit()
-                apply_error_msg = ppe.message
-                logger.warning("Attempt 1 patch application failed: %s; escalating to retry", ppe.message)
+                apply_error_msg = "test files are read-only, fix the source code" if ppe.code == ErrorCode.PATCH_REJECTED_PROTECTED_PATH else ppe.message
+                logger.warning("Attempt 1 patch failed: code=%s message=%s; escalating to bounded retry", ppe.code, ppe.message)
             else:
                 raise
 
@@ -237,16 +291,36 @@ def run_repair_job(job_id: str) -> None:
             )
             conn.commit()
 
-            patch_hash_2, changed_files_2, diff_text_2 = patch_applier.apply_patch_to_copy(
-                baseline_path=baseline_dir,
-                working_copy_path=attempt2_dir,
-                proposal=revised_proposal,
-            )
-            cur.execute(
-                "UPDATE attempts SET status = 'PATCH_APPLIED', patch_hash = ?, changed_files_json = ? WHERE id = ?",
-                (patch_hash_2, json.dumps(changed_files_2), attempt2_id),
-            )
-            conn.commit()
+            try:
+                patch_hash_2, changed_files_2, diff_text_2 = patch_applier.apply_patch_to_copy(
+                    baseline_path=baseline_dir,
+                    working_copy_path=attempt2_dir,
+                    proposal=revised_proposal,
+                )
+                valid_post_patch2, reason_post_patch2 = test_integrity.verify_test_integrity(baseline_hashes, attempt2_dir)
+                if not valid_post_patch2:
+                    raise ProofPatchError(
+                        code=ErrorCode.TEST_INTEGRITY_VIOLATION,
+                        message=f"Test integrity violation after revised patch: {reason_post_patch2}",
+                        http_status=422,
+                    )
+                cur.execute(
+                    "UPDATE attempts SET status = 'PATCH_APPLIED', patch_hash = ?, changed_files_json = ? WHERE id = ?",
+                    (patch_hash_2, json.dumps(changed_files_2), attempt2_id),
+                )
+                conn.commit()
+            except ProofPatchError as ppe2:
+                status_code_db = (
+                    AttemptStatus.PATCH_REJECTED.value
+                    if ppe2.code == ErrorCode.PATCH_REJECTED_PROTECTED_PATH
+                    else AttemptStatus.PATCH_APPLY_FAILED.value
+                )
+                cur.execute(
+                    "UPDATE attempts SET status = ?, completed_at = ? WHERE id = ?",
+                    (status_code_db, _utc_now(), attempt2_id),
+                )
+                conn.commit()
+                raise
 
             update_job_status(job_id, JobStatus.TESTING, "Running tests for revised patch")
             test_run_2 = sandbox.run_tests(attempt2_dir, job_id=job_id)
@@ -353,17 +427,36 @@ def run_repair_job(job_id: str) -> None:
                     )
                     conn.commit()
 
-                    patch_hash_2, changed_files_2, diff_text_2 = patch_applier.apply_patch_to_copy(
-                        baseline_path=baseline_dir,
-                        working_copy_path=attempt2_dir,
-                        proposal=revised_proposal,
-                    )
-
-                    cur.execute(
-                        "UPDATE attempts SET status = 'PATCH_APPLIED', patch_hash = ?, changed_files_json = ? WHERE id = ?",
-                        (patch_hash_2, json.dumps(changed_files_2), attempt2_id),
-                    )
-                    conn.commit()
+                    try:
+                        patch_hash_2, changed_files_2, diff_text_2 = patch_applier.apply_patch_to_copy(
+                            baseline_path=baseline_dir,
+                            working_copy_path=attempt2_dir,
+                            proposal=revised_proposal,
+                        )
+                        valid_post_retry, reason_post_retry = test_integrity.verify_test_integrity(baseline_hashes, attempt2_dir)
+                        if not valid_post_retry:
+                            raise ProofPatchError(
+                                code=ErrorCode.TEST_INTEGRITY_VIOLATION,
+                                message=f"Test integrity violation after retry patch: {reason_post_retry}",
+                                http_status=422,
+                            )
+                        cur.execute(
+                            "UPDATE attempts SET status = 'PATCH_APPLIED', patch_hash = ?, changed_files_json = ? WHERE id = ?",
+                            (patch_hash_2, json.dumps(changed_files_2), attempt2_id),
+                        )
+                        conn.commit()
+                    except ProofPatchError as retry_ppe:
+                        att_st = (
+                            AttemptStatus.PATCH_REJECTED.value
+                            if retry_ppe.code == ErrorCode.PATCH_REJECTED_PROTECTED_PATH
+                            else AttemptStatus.PATCH_APPLY_FAILED.value
+                        )
+                        cur.execute(
+                            "UPDATE attempts SET status = ?, completed_at = ? WHERE id = ?",
+                            (att_st, _utc_now(), attempt2_id),
+                        )
+                        conn.commit()
+                        raise
 
                     update_job_status(job_id, JobStatus.TESTING, "Running tests for revised patch")
                     test_run_2 = sandbox.run_tests(attempt2_dir, job_id=job_id)
@@ -406,6 +499,21 @@ def run_repair_job(job_id: str) -> None:
                     logger.warning("Retry attempt failed: outcome=error type=%s", type(retry_exc).__name__)
 
         # ── 5. VERDICT & ARTIFACTS ────────────────────────────────────────────
+        # Re-verify test integrity after pytest execution (detects runtime tampering)
+        valid_post_test, reason_post_test = test_integrity.verify_test_integrity(baseline_hashes, final_working_dir)
+        if not valid_post_test:
+            raise ProofPatchError(
+                code=ErrorCode.TEST_INTEGRITY_VIOLATION,
+                message=f"Test integrity violation during test execution: {reason_post_test}",
+                http_status=422,
+            )
+
+        # Detect test-literal hardcoding heuristic
+        hardcoding_warning = test_integrity.detect_hardcoding_heuristic(
+            diff_text=final_diff,
+            baseline_dir=baseline_dir,
+        )
+
         test_schema = TestResultSchema(
             status=TestStatus(final_test_run.test_status),
             command_id="pytest-default",
@@ -422,6 +530,9 @@ def run_repair_job(job_id: str) -> None:
         final_verdict, summary, _ = verdict_svc.compute_verdict(
             test_result=test_schema,
             attempt_status="TESTED",
+            baseline_inventory=baseline_inventory,
+            protected_files_count=len(baseline_hashes),
+            hardcoding_warning=hardcoding_warning,
         )
 
         _create_and_save_artifacts(
@@ -444,7 +555,7 @@ def run_repair_job(job_id: str) -> None:
 
     except ProofPatchError as ppe:
         logger.warning("Job %s failed: error_code=%s", job_id, ppe.code)
-        blocked_codes = (ErrorCode.PROVIDER_AUTH_ERROR, ErrorCode.SANDBOX_UNAVAILABLE, ErrorCode.PROVIDER_RATE_LIMIT)
+        blocked_codes = (ErrorCode.PROVIDER_AUTH_ERROR, ErrorCode.SANDBOX_UNAVAILABLE, ErrorCode.PROVIDER_RATE_LIMIT, ErrorCode.TEST_INTEGRITY_VIOLATION)
         is_blocked = ppe.code in blocked_codes
         update_job_status(
             job_id=job_id,

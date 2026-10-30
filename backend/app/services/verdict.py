@@ -2,25 +2,35 @@
 
 Enforces the core product axiom: EVIDENCE OVER ASSERTION.
 A repair is NEVER marked VERIFIED based on model prose. Only actual test execution
-evidence from the sandbox runner can establish a VERIFIED verdict.
+evidence from the sandbox runner, verified against pristine test file integrity
+and complete baseline test collection, can establish a VERIFIED verdict.
 
 Verdicts:
-- VERIFIED: approved test command exited 0 AND tests_discovered > 0 AND tests_passed > 0 AND tests_failed == 0.
-- NOT_VERIFIED: tests ran but 0 tests discovered, tests were not run, or evidence is inconclusive.
+- VERIFIED: approved test command exited 0 AND tests_discovered > 0 AND tests_passed > 0
+  AND tests_failed == 0 AND all baseline tests collected and passed AND test files unmodified.
+- NOT_VERIFIED: tests ran but 0 tests discovered, tests were not run, baseline inventory
+  mismatched (skipped/xfailed/missing tests), or evidence is inconclusive.
 - FAILED: tests ran and failed (exit_code != 0, tests_failed > 0), or patch could not be applied.
-- BLOCKED: infrastructure, authentication, sandbox, or security policy prevented execution.
+- BLOCKED: infrastructure, authentication, sandbox, or security policy / test integrity violation.
 """
 from __future__ import annotations
 
 from typing import List, Optional, Tuple
 
+from app.core.errors import ErrorCode
 from app.schemas.api import FinalVerdict, TestResultSchema, TestStatus
+from app.services.test_integrity import verify_baseline_inventory_passed
 
 
 def compute_verdict(
     test_result: Optional[TestResultSchema],
     attempt_status: str,
     error_code: Optional[str] = None,
+    test_integrity_valid: bool = True,
+    test_integrity_detail: Optional[str] = None,
+    baseline_inventory: Optional[List[str]] = None,
+    protected_files_count: int = 0,
+    hardcoding_warning: Optional[str] = None,
 ) -> Tuple[FinalVerdict, str, List[str]]:
     """
     Compute final verdict, summary statement, and limitations list.
@@ -32,14 +42,24 @@ def compute_verdict(
         "Passing tests provide evidence for tested behavior only; they do not prove the absence of all defects.",
     ]
 
+    # Test integrity violation (anti-tampering)
+    if error_code == ErrorCode.TEST_INTEGRITY_VIOLATION or not test_integrity_valid:
+        detail = test_integrity_detail or "Test files were modified or tampered with."
+        limitations.append("Test files are read-only and must remain unmodified.")
+        return (
+            FinalVerdict.BLOCKED,
+            f"Test integrity violation: {detail}",
+            limitations,
+        )
+
     # Infrastructure / policy blocking
     if error_code in (
-        "PROVIDER_AUTH_ERROR",
-        "PROVIDER_TIMEOUT",
-        "PROVIDER_RATE_LIMIT",
-        "SANDBOX_UNAVAILABLE",
-        "ARCHIVE_PATH_REJECTED",
-        "UPLOAD_LIMIT_EXCEEDED",
+        ErrorCode.PROVIDER_AUTH_ERROR,
+        ErrorCode.PROVIDER_TIMEOUT,
+        ErrorCode.PROVIDER_RATE_LIMIT,
+        ErrorCode.SANDBOX_UNAVAILABLE,
+        ErrorCode.ARCHIVE_PATH_REJECTED,
+        ErrorCode.UPLOAD_LIMIT_EXCEEDED,
     ):
         return (
             FinalVerdict.BLOCKED,
@@ -49,12 +69,16 @@ def compute_verdict(
 
     # Patch rejection or application failure
     if attempt_status in ("PATCH_REJECTED", "PATCH_APPLY_FAILED") or error_code in (
-        "PATCH_REJECTED",
-        "PATCH_APPLY_FAILED",
+        ErrorCode.PATCH_REJECTED,
+        ErrorCode.PATCH_REJECTED_PROTECTED_PATH,
+        ErrorCode.PATCH_APPLY_FAILED,
     ):
+        msg = "The candidate patch could not be safely validated or applied to the repository."
+        if error_code == ErrorCode.PATCH_REJECTED_PROTECTED_PATH:
+            msg = "The patch was rejected because test files are read-only. Fix the source code."
         return (
             FinalVerdict.FAILED,
-            "The candidate patch could not be safely validated or applied to the repository.",
+            msg,
             limitations,
         )
 
@@ -106,7 +130,7 @@ def compute_verdict(
             limitations,
         )
 
-    # Success condition: exit_code 0 AND tests_discovered > 0 AND tests_passed > 0 AND tests_failed == 0
+    # Success candidate: exit_code 0 AND tests_discovered > 0 AND tests_passed > 0 AND tests_failed == 0
     if (
         test_result.status == TestStatus.PASSED
         and test_result.exit_code == 0
@@ -116,9 +140,36 @@ def compute_verdict(
     ):
         if test_result.output_truncated:
             limitations.append("Test output was truncated to fit the configured output limit.")
+
+        # Baseline inventory verification (must pass all pristine baseline tests)
+        if baseline_inventory:
+            all_passed, passed_count, total_count, explanation = verify_baseline_inventory_passed(
+                baseline_inventory,
+                test_result.stdout,
+                test_result.stderr,
+            )
+            if not all_passed:
+                limitations.append(explanation or "Not all baseline tests passed.")
+                limitations.append("Skipped or xfail tests never count as passing.")
+                return (
+                    FinalVerdict.NOT_VERIFIED,
+                    explanation or "Baseline test inventory mismatch. Skipped or xfail tests never count as passing.",
+                    limitations,
+                )
+            inventory_summary = f"{passed_count} of {total_count} baseline tests passed"
+        else:
+            inventory_summary = f"{test_result.tests_passed} test(s) passed"
+
+        integrity_phrase = f"Test files unmodified ({protected_files_count} files hashed)" if protected_files_count > 0 else "Test files unmodified"
+        summary = f"The approved test suite completed successfully ({test_result.tests_passed} test(s) passed). {integrity_phrase}. {inventory_summary}."
+
+        if hardcoding_warning:
+            summary = f"{summary} {hardcoding_warning}"
+            limitations.append(hardcoding_warning)
+
         return (
             FinalVerdict.VERIFIED,
-            f"The approved test suite completed successfully ({test_result.tests_passed} test(s) passed).",
+            summary,
             limitations,
         )
 

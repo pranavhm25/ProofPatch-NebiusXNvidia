@@ -44,7 +44,7 @@ logger = logging.getLogger(__name__)
 # Approved command template — user cannot modify this.
 # Resolves python executable with pytest available.
 _PYTHON_EXE = sys.executable if sys.executable else "python3"
-_APPROVED_COMMAND = [_PYTHON_EXE, "-m", "pytest", "--tb=short", "-q"]
+_APPROVED_COMMAND = [_PYTHON_EXE, "-m", "pytest", "--tb=short", "-q", "-rA"]
 
 # Environment variables to scrub from subprocess environment
 _SCRUB_ENV_PREFIXES = (
@@ -254,25 +254,29 @@ def _parse_pytest_output(result: SandboxResult) -> None:
 
     combined = result.stdout + "\n" + result.stderr
 
-    # Match pytest summary line: "3 passed, 1 failed in 0.5s" or "5 passed in 0.2s"
-    # Also handles "no tests ran"
-    m = re.search(
-        r"(\d+) passed(?:,\s*(\d+) failed)?(?:,\s*(\d+) error)?.*?in",
-        combined,
-        re.IGNORECASE,
-    )
-    if m:
-        result.tests_passed = int(m.group(1))
-        result.tests_failed = int(m.group(2) or 0)
-        errors = int(m.group(3) or 0)
-        result.tests_discovered = result.tests_passed + result.tests_failed + errors
+    passed_m = re.search(r"\b(\d+)\s+passed\b", combined, re.IGNORECASE)
+    failed_m = re.search(r"\b(\d+)\s+failed\b", combined, re.IGNORECASE)
+    error_m = re.search(r"\b(\d+)\s+error(?:s)?\b", combined, re.IGNORECASE)
+    skipped_m = re.search(r"\b(\d+)\s+skipped\b", combined, re.IGNORECASE)
+    xfail_m = re.search(r"\b(\d+)\s+xfailed\b", combined, re.IGNORECASE)
+
+    passed = int(passed_m.group(1)) if passed_m else 0
+    failed = int(failed_m.group(1)) if failed_m else 0
+    errors = int(error_m.group(1)) if error_m else 0
+    skipped = int(skipped_m.group(1)) if skipped_m else 0
+    xfailed = int(xfail_m.group(1)) if xfail_m else 0
+    total = passed + failed + errors + skipped + xfailed
+
+    if total > 0:
+        result.tests_passed = passed
+        result.tests_failed = failed
+        result.tests_discovered = total
     else:
-        # Check for "no tests ran"
         if re.search(r"no tests ran|collected 0 items", combined, re.IGNORECASE):
             result.tests_discovered = 0
             result.tests_passed = 0
             result.tests_failed = 0
-        elif re.search(r"ERROR|error", combined):
+        elif re.search(r"ERROR collecting|ImportError|SyntaxError", combined):
             result.tests_discovered = None
 
     # Determine test status
