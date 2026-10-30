@@ -113,9 +113,26 @@ npm run dev
 ```
 Open [http://localhost:5173](http://localhost:5173) in your browser.
 
+### 3. Web UI & Evidence Interface
+ProofPatch features a warm, minimal, calm developer product aesthetic matching modern engineering standards:
+- **New Repair (/):** Drag-and-drop repository .zip archive upload (max 20 MB), natural language defect report with live character counter, optional diagnostics, and 1-click sample bug loader (Try Sample Bug).
+- **Jobs History (/jobs):** Filterable list of repair sessions (All, Verified, Running, Failed) with duration metrics, model attribution badges, and quick links.
+- **Progress Timeline (/jobs/:id):** Real-time 7-stage execution timeline tracking validation, inspection, planning, patch synthesis, sandbox testing, and retry.
+- **Evidence & Result (/jobs/:id/result):** Evidence-backed verdict badge (VERIFIED, NOT_VERIFIED, FAILED, BLOCKED), multi-file unified diff viewer with line numbers and copy action, raw pytest stdout/stderr logs, attempt breakdown, and direct .patch / patched .zip artifact downloads.
+- **Models & Roles (/models):** Architecture and latency synthesis for Nebius Token Factory roles (FAST, REASONING, ADVANCED).
+- **Security Boundaries (/security):** Truthful disclosure of subprocess isolation, environment variable scrubbing, 60-minute workspace expiration, and network boundary limits.
+- **About (/about):** The evidence-over-assertion philosophy and multi-model orchestration overview.
+
 ---
 
 ## 5. Testing & Verification
+
+### Run Frontend Tests
+Execute the Vitest component and poller test suite:
+`ash
+cd frontend
+npm test -- --run
+`
 
 ### Run Backend Unit Tests
 Execute the comprehensive test suite covering archive traversal protection, atomic patch application, verdict logic, and REST endpoints:
