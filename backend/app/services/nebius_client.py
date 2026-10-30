@@ -138,16 +138,22 @@ def call_model(
             fallback_attempted = True
             attempt = 0
             continue
-        if response.status_code == 429:
-            logger.warning("Model request outcome=rate_limited job=%s role=%s model_id=%s attempt=%d", job_id, resolved_role.value, model_id, attempt + 1)
-            last_error = ProofPatchError(
+        if response.status_code == 402:
+            logger.warning("Model request outcome=budget_exhausted job=%s role=%s model_id=%s status=402", job_id, resolved_role.value, model_id)
+            raise ProofPatchError(
                 code=ErrorCode.PROVIDER_RATE_LIMIT,
-                message="The model provider is rate-limiting requests. Please try again later.",
-                http_status=429,
-                details={"retryable": True},
+                message="Model provider budget exhausted (HTTP 402). Execution halted immediately.",
+                http_status=402,
+                details={"blocked": True},
             )
-            attempt += 1
-            continue
+        if response.status_code == 429:
+            logger.warning("Model request outcome=rate_limited job=%s role=%s model_id=%s status=429", job_id, resolved_role.value, model_id)
+            raise ProofPatchError(
+                code=ErrorCode.PROVIDER_RATE_LIMIT,
+                message="Model provider rate limit exceeded (HTTP 429). Execution halted immediately without retry loop.",
+                http_status=429,
+                details={"blocked": True},
+            )
         if response.status_code >= 500:
             logger.warning("Model request outcome=provider_error job=%s role=%s model_id=%s status=%d attempt=%d", job_id, resolved_role.value, model_id, response.status_code, attempt + 1)
             last_error = ProofPatchError(

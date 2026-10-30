@@ -49,6 +49,25 @@ def test_call_model_rate_limit_error(monkeypatch):
         nebius_client.call_model("sys", "user", role=ModelRole.FAST)
 
     assert exc_info.value.code == ErrorCode.PROVIDER_RATE_LIMIT
+    assert exc_info.value.details.get('blocked') is True
+
+
+def test_call_model_budget_exhausted_402(monkeypatch):
+    monkeypatch.setattr(settings, 'nebius_api_key', 'test-key-mock')
+    monkeypatch.setattr(settings, 'nebius_model_fast', 'nvidia/nemotron-fast')
+
+    def mock_post(*args, **kwargs):
+        req = httpx.Request('POST', 'https://api.tokenfactory.nebius.com/v1/chat/completions')
+        return httpx.Response(402, json={'error': {'type': 'insufficient_quota', 'message': 'budget exhausted'}}, request=req)
+
+    monkeypatch.setattr(httpx.Client, 'post', mock_post)
+
+    with pytest.raises(ProofPatchError) as exc_info:
+        nebius_client.call_model('sys', 'user', role=ModelRole.FAST)
+
+    assert exc_info.value.code == ErrorCode.PROVIDER_RATE_LIMIT
+    assert 'budget exhausted' in exc_info.value.message.lower()
+    assert exc_info.value.details.get('blocked') is True
 
 
 def test_call_model_timeout_is_reported(monkeypatch):

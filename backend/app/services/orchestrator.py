@@ -444,12 +444,14 @@ def run_repair_job(job_id: str) -> None:
 
     except ProofPatchError as ppe:
         logger.warning("Job %s failed: error_code=%s", job_id, ppe.code)
+        blocked_codes = (ErrorCode.PROVIDER_AUTH_ERROR, ErrorCode.SANDBOX_UNAVAILABLE, ErrorCode.PROVIDER_RATE_LIMIT)
+        is_blocked = ppe.code in blocked_codes
         update_job_status(
             job_id=job_id,
-            status=JobStatus.FAILED if ppe.code not in (ErrorCode.PROVIDER_AUTH_ERROR, ErrorCode.SANDBOX_UNAVAILABLE) else JobStatus.BLOCKED,
+            status=JobStatus.BLOCKED if is_blocked else JobStatus.FAILED,
             stage=ppe.message,
             error_code=ppe.code,
-            final_verdict=FinalVerdict.BLOCKED if ppe.code in (ErrorCode.PROVIDER_AUTH_ERROR, ErrorCode.SANDBOX_UNAVAILABLE) else FinalVerdict.FAILED,
+            final_verdict=FinalVerdict.BLOCKED if is_blocked else FinalVerdict.FAILED,
         )
     except Exception as exc:
         logger.error("Unexpected job failure: job=%s error_type=%s", job_id, type(exc).__name__)
