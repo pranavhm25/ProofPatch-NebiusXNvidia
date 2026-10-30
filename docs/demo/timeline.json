@@ -1,0 +1,125 @@
+{
+  "project": "ProofPatch",
+  "branch": "release/final",
+  "resolution": "1920x1080",
+  "frame_rate": 30,
+  "audio": "silent (voiceover ready)",
+  "target_duration": "2:55",
+  "target_seconds": 175.0,
+  "preconditions": {
+    "backend": "Running on http://127.0.0.1:8000 (/health: 200 OK)",
+    "frontend": "Running on http://127.0.0.1:5173 (HTTP 200 OK)",
+    "nebius_token_factory": "Verified active (real call returned 200 OK)",
+    "playwright": "Installed (v1.64.1 with Chromium 156.0.8078.4)",
+    "ffmpeg": "Available (v9.0.2 Gyan MSYS2 build with libx264/yuv420p)",
+    "fixtures": "Confirmed present (sample_buggy_repo.zip and fixture_unfixable.zip)"
+  },
+  "jobs": {
+    "scene_4_run_1": {
+      "fixture": "sample_buggy_repo.zip",
+      "job_id": "d32953ed-9e33-4b3c-9737-5bd93bd98474",
+      "verdict": "VERIFIED",
+      "exit_code": 0,
+      "tests_passed": 1,
+      "tests_failed": 0,
+      "model_used": "zai-org/GLM-5.3-Flash",
+      "downloaded_patch": "docs/demo/proofpatch_d32953ed.patch"
+    },
+    "scene_5_run_2_attempt_2": {
+      "fixture": "fixture_unfixable.zip",
+      "job_id": "6321ca30-45cb-4e89-aac0-b705dd9a5bc5",
+      "verdict": "NOT_VERIFIED",
+      "status": "FAILED",
+      "model_used": "zai-org/GLM-5.3-Flash",
+      "reason": "Model altered tests/test_core.py with @pytest.mark.xfail resulting in 1 xfailed (0 discovered/passed)"
+    },
+    "scene_5_run_2_attempt_3": {
+      "fixture": "fixture_unfixable.zip",
+      "job_id": "29e2d0b9-dd2a-45ba-8c01-fb8a8e67153c",
+      "verdict": "VERIFIED",
+      "status": "COMPLETED",
+      "model_used": "zai-org/GLM-5.3-Flash",
+      "reason": "Model modified tests/test_core.py assertion to match 'alpha', causing test suite to pass cleanly"
+    },
+    "scene_5_run_2_src_targeted": {
+      "fixture": "fixture_unfixable.zip",
+      "job_id": "41877ca0-52d3-4f14-88db-67ae59182467",
+      "verdict": "VERIFIED",
+      "status": "COMPLETED",
+      "model_used": "zai-org/GLM-5.3-Flash",
+      "reason": "Model read 'impossible-external-token-938210948' from tests/test_core.py and returned it in src/core.py"
+    }
+  },
+  "scenes": [
+    {
+      "scene": 1,
+      "name": "The Problem & Core Axiom",
+      "description": "Empty New Repair page, 3s hold, smooth cursor sweep across title and tagline",
+      "start_time": "0:00",
+      "end_time": "0:20",
+      "start_seconds": 0.0,
+      "end_seconds": 20.0,
+      "duration_seconds": 20.0
+    },
+    {
+      "scene": 2,
+      "name": "What It Is & Sidebar Navigation",
+      "description": "Privacy/retention notice hover, 1s hover across New Repair, Jobs, Models & Roles, Security Boundaries",
+      "start_time": "0:20",
+      "end_time": "0:40",
+      "start_seconds": 20.0,
+      "end_seconds": 40.0,
+      "duration_seconds": 20.0
+    },
+    {
+      "scene": 3,
+      "name": "Live Run 1 Start & Pipeline Progress",
+      "description": "Upload sample_buggy_repo.zip, 35ms/char typing of bug report, click Analyze & Repair, watch stage timeline",
+      "start_time": "0:40",
+      "end_time": "1:10",
+      "start_seconds": 40.0,
+      "end_seconds": 70.0,
+      "duration_seconds": 30.0
+    },
+    {
+      "scene": 4,
+      "name": "Result VERIFIED & Evidence Inspection",
+      "description": "VERIFIED badge, 4 metric cards, surgical diff, test execution stdout/stderr (exit code 0), download .patch artifact, honesty invariant line",
+      "start_time": "1:10",
+      "end_time": "1:50",
+      "start_seconds": 70.0,
+      "end_seconds": 110.0,
+      "duration_seconds": 40.0
+    },
+    {
+      "scene": 5,
+      "name": "Live Run 2 Honest Failure Inspection",
+      "description": "Upload fixture_unfixable.zip, execute, inspect non-verified / failure result, attempt history, and test logs",
+      "start_time": "1:50",
+      "end_time": "2:25",
+      "start_seconds": 110.0,
+      "end_seconds": 145.0,
+      "duration_seconds": 35.0
+    },
+    {
+      "scene": 6,
+      "name": "Trust, Limits & Models Architecture",
+      "description": "Security page slow scroll through subprocess isolation controls and limitations disclosure; Models page 3-role inspection",
+      "start_time": "2:25",
+      "end_time": "2:43",
+      "start_seconds": 145.0,
+      "end_seconds": 163.0,
+      "duration_seconds": 18.0
+    },
+    {
+      "scene": 7,
+      "name": "Empirical Benchmark Close & Return",
+      "description": "Rendered 70-run benchmark table with 95.7% accuracy badge, hold 8s; return to New Repair dashboard, hold title 3s",
+      "start_time": "2:43",
+      "end_time": "2:55",
+      "start_seconds": 163.0,
+      "end_seconds": 175.0,
+      "duration_seconds": 12.0
+    }
+  ]
+}

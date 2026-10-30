@@ -16,17 +16,16 @@ Scenes:
 
 import json
 import logging
-import math
 import os
 import shutil
 import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
+import urllib.request
 
-import httpx
-from playwright.sync_api import BrowserContext, Page, sync_playwright
+from playwright.sync_api import BrowserContext, Locator, Page, sync_playwright
 
 logging.basicConfig(level=logging.INFO, format="[%(asctime)s] %(levelname)s: %(message)s")
 logger = logging.getLogger("record_demo")
@@ -43,7 +42,7 @@ FIXTURE_UNFIXABLE = REPO_ROOT / "backend" / "tests" / "fixtures" / "fixture_unfi
 BENCHMARK_HTML = DEMO_DIR / "benchmark.html"
 
 FRONTEND_URL = "http://127.0.0.1:5173"
-BACKEND_HEALTH_URL = "http://127.0.0.1:8000/health"
+BACKEND_BASE = "http://127.0.0.1:8000"
 
 # Custom Injected Cursor Script (60fps hardware accelerated, SVG arrow + ripple)
 CURSOR_OVERLAY_SCRIPT = """
@@ -179,7 +178,6 @@ class DemoRecorder:
     start_x, start_y = self.current_cursor
     for i in range(1, steps + 1):
       t = i / steps
-      # Ease-in-out quintic / cubic
       eased = 3 * (t**2) - 2 * (t**3)
       x = start_x + (target_x - start_x) * eased
       y = start_y + (target_y - start_y) * eased
@@ -192,13 +190,13 @@ class DemoRecorder:
   def move_to_element(
       self,
       page: Page,
-      selector: str,
+      target: Union[str, Locator],
       steps: int = 32,
       pause_after: float = 0.3,
   ) -> bool:
     """Find visible element and smoothly move cursor to its center."""
     try:
-      elem = page.locator(selector).first
+      elem = page.locator(target).first if isinstance(target, str) else target
       elem.wait_for(state="visible", timeout=8000)
       box = elem.bounding_box()
       if box:
@@ -209,18 +207,18 @@ class DemoRecorder:
         )
         return True
     except Exception as e:
-      logger.warning(f"Could not move to element '{selector}': {e}")
+      logger.warning(f"Could not move to element: {e}")
     return False
 
   def click_element(
       self,
       page: Page,
-      selector: str,
+      target: Union[str, Locator],
       steps: int = 30,
       pause_after: float = 0.4,
   ):
     """Smoothly move to an element and click with visible ripple."""
-    elem = page.locator(selector).first
+    elem = page.locator(target).first if isinstance(target, str) else target
     elem.wait_for(state="visible", timeout=8000)
     box = elem.bounding_box()
     if box:
@@ -234,10 +232,14 @@ class DemoRecorder:
         time.sleep(pause_after)
 
   def type_text(
-      self, page: Page, selector: str, text: str, delay_ms: float = 35.0
+      self,
+      page: Page,
+      target: Union[str, Locator],
+      text: str,
+      delay_ms: float = 35.0,
   ):
     """Focus element and type text with humanlike rhythm."""
-    self.click_element(page, selector, steps=25, pause_after=0.2)
+    self.click_element(page, target, steps=25, pause_after=0.2)
     for char in text:
       page.keyboard.type(char, delay=delay_ms)
 
@@ -249,14 +251,14 @@ def scene_1_the_problem(page: Page, rec: DemoRecorder):
   """Scene 1 (0:00 to 0:20): Open New Repair page empty, hold 3s, move over title and tagline."""
   rec.mark_scene_start(1, "The Problem & Core Axiom")
   page.goto(FRONTEND_URL, wait_until="networkidle")
-  page.wait_for_selector("text=New Repair", timeout=10000)
+  page.wait_for_selector("h1", timeout=10000)
 
   # Hold still for 3s
-  logger.info("Holding still on empty New Repair page...")
+  logger.info("Holding still for 3s on empty New Repair page...")
   time.sleep(3.0)
 
   # Slowly move cursor over the title
-  title_elem = page.locator("h1:has-text('New Repair'), text=New Repair").first
+  title_elem = page.locator("h1").first
   box = title_elem.bounding_box()
   if box:
     rec.smooth_move(page, box["x"] + 60, box["y"] + 15, steps=35)
@@ -265,7 +267,7 @@ def scene_1_the_problem(page: Page, rec: DemoRecorder):
     time.sleep(1.0)
 
   # Slowly move over tagline / description
-  desc_elem = page.locator("text=Submit a Python repository archive").first
+  desc_elem = page.get_by_text("Submit a Python repository archive").first
   box_desc = desc_elem.bounding_box()
   if box_desc:
     rec.smooth_move(
@@ -284,7 +286,7 @@ def scene_1_the_problem(page: Page, rec: DemoRecorder):
     time.sleep(2.5)
 
   # Move over badge "Python MVP"
-  badge = page.locator("text=Python MVP").first
+  badge = page.get_by_text("Python MVP").first
   b_box = badge.bounding_box()
   if b_box:
     rec.smooth_move(
@@ -305,7 +307,7 @@ def scene_2_what_it_is(page: Page, rec: DemoRecorder):
   rec.mark_scene_start(2, "What It Is & Sidebar Navigation")
 
   # Move cursor over privacy and security notice
-  sec_notice = page.locator("text=Isolated Workspace & Retention Policy").first
+  sec_notice = page.get_by_text("Isolated Workspace & Retention Policy").first
   box = sec_notice.bounding_box()
   if box:
     rec.smooth_move(
@@ -319,19 +321,23 @@ def scene_2_what_it_is(page: Page, rec: DemoRecorder):
 
   # Hover sidebar items one by one (~1s each)
   # 1. New Repair
-  rec.move_to_element(page, 'nav a:has-text("New Repair")', steps=30)
+  rec.move_to_element(page, page.locator('nav a[href="/"]').first, steps=30)
   time.sleep(1.2)
 
   # 2. Jobs
-  rec.move_to_element(page, 'nav a:has-text("Jobs")', steps=30)
+  rec.move_to_element(page, page.locator('nav a[href="/jobs"]').first, steps=30)
   time.sleep(1.2)
 
   # 3. Models & Roles
-  rec.move_to_element(page, 'nav a:has-text("Models & Roles")', steps=30)
+  rec.move_to_element(
+      page, page.locator('nav a[href="/models"]').first, steps=30
+  )
   time.sleep(1.2)
 
   # 4. Security Boundaries
-  rec.move_to_element(page, 'nav a:has-text("Security Boundaries")', steps=30)
+  rec.move_to_element(
+      page, page.locator('nav a[href="/security"]').first, steps=30
+  )
   time.sleep(1.4)
 
   # Move cursor back into main workspace
@@ -352,7 +358,7 @@ def scene_3_live_run_1_start(page: Page, rec: DemoRecorder) -> str:
   # Move to Dropzone area
   rec.move_to_element(
       page,
-      'text=Upload Repository Archive, text=Drag & drop your .zip archive here',
+      page.get_by_text("1. Repository Archive").first,
       steps=30,
   )
   time.sleep(0.6)
@@ -368,7 +374,7 @@ def scene_3_live_run_1_start(page: Page, rec: DemoRecorder) -> str:
   time.sleep(1.0)
 
   # Move cursor over validated project card
-  rec.move_to_element(page, "text=Valid Project", steps=28)
+  rec.move_to_element(page, page.get_by_text("Valid Project").first, steps=28)
   time.sleep(1.0)
 
   # Move cursor to Defect Description textarea
@@ -384,11 +390,12 @@ def scene_3_live_run_1_start(page: Page, rec: DemoRecorder) -> str:
   time.sleep(1.0)
 
   # Move to Analyze and Repair button
-  rec.move_to_element(page, 'button:has-text("Analyze and Repair")', steps=30)
+  submit_btn = page.locator('button[type="submit"]').first
+  rec.move_to_element(page, submit_btn, steps=30)
   time.sleep(0.5)
 
   # Click Analyze and Repair
-  rec.click_element(page, 'button:has-text("Analyze and Repair")', steps=15)
+  rec.click_element(page, submit_btn, steps=15)
   logger.info("Clicked Analyze and Repair. Waiting for progress redirect...")
 
   # Wait for redirect to Progress Page (/jobs/<job_id>)
@@ -401,7 +408,6 @@ def scene_3_live_run_1_start(page: Page, rec: DemoRecorder) -> str:
   start_poll = time.monotonic()
   reached_terminal = False
   while time.monotonic() - start_poll < 120.0:
-    # Check if redirected to result
     if "/result" in page.url:
       reached_terminal = True
       break
@@ -428,7 +434,6 @@ def scene_3_live_run_1_start(page: Page, rec: DemoRecorder) -> str:
     time.sleep(0.5)
 
   if not reached_terminal:
-    # Wait for result page
     page.wait_for_url("**/result", timeout=20000)
 
   logger.info("Job 1 reached terminal result page!")
@@ -449,38 +454,43 @@ def scene_4_result_verified(page: Page, rec: DemoRecorder, job_id: str):
       time.monotonic() - rec.start_wall_clock, 2
   )
 
-  # Check verdict
-  verdict_elem = page.locator(
-      "[data-testid='verdict-badge'], text=VERIFIED, text=FAILED,"
-      " text=NOT_VERIFIED"
-  ).first
-  verdict_text = verdict_elem.inner_text().strip()
-  logger.info(f"Scene 4 Verdict badge text: '{verdict_text}'")
-  rec.job1_verdict = verdict_text
+  # Verify verdict from backend API
+  api_res = json.loads(
+      urllib.request.urlopen(f"{BACKEND_BASE}/api/jobs/{job_id}/result")
+      .read()
+      .decode()
+  )
+  verdict_api = api_res.get("verdict", "")
+  logger.info(f"Scene 4 Backend API verdict: '{verdict_api}'")
+  rec.job1_verdict = verdict_api
 
-  if "VERIFIED" not in verdict_text:
-    logger.error(f"Expected VERIFIED verdict, got '{verdict_text}'!")
+  if verdict_api != "VERIFIED":
+    logger.error(f"Expected VERIFIED verdict from API, got '{verdict_api}'!")
     raise RuntimeError(
-        f"Job {job_id} did not reach VERIFIED! Found: {verdict_text}"
+        f"Job {job_id} did not reach VERIFIED! Found: {verdict_api}"
     )
 
   # 1. Verdict badge: hover and hold 4s
-  rec.move_to_element(page, "text=VERIFIED", steps=32)
+  rec.move_to_element(page, page.get_by_text("Verified", exact=True).first, steps=32)
   time.sleep(4.0)
 
   # 2. Stat cards: hover across them, hold 4s total
-  stat_cards = page.locator(
-      "text=Tests Passed, text=Tests Failed, text=Execution Duration, text=Files"
-      " Changed"
-  ).all()
+  stat_cards = [
+      page.get_by_text("Tests Passed").first,
+      page.get_by_text("Tests Failed").first,
+      page.get_by_text("Execution Duration").first,
+      page.get_by_text("Files Changed").first,
+  ]
   for card in stat_cards:
-    rec.move_to_element(page, f"text={card.inner_text().strip()}", steps=25)
+    rec.move_to_element(page, card, steps=25)
     time.sleep(0.9)
 
   # 3. Code diff: scroll down smoothly, inspect diff
   page.evaluate("window.scrollBy({top: 320, behavior: 'smooth'})")
   time.sleep(0.8)
-  rec.move_to_element(page, "text=Generated Code Diff", steps=28)
+  rec.move_to_element(
+      page, page.get_by_text("Generated Code Diff").first, steps=28
+  )
   time.sleep(1.0)
   # Move across the diff additions/deletions
   rec.smooth_move(page, 700, 520, steps=30)
@@ -491,23 +501,28 @@ def scene_4_result_verified(page: Page, rec: DemoRecorder, job_id: str):
   # 4. Sandbox Test Evidence panel: scroll down, inspect exit code and stdout
   page.evaluate("window.scrollBy({top: 360, behavior: 'smooth'})")
   time.sleep(0.8)
-  rec.move_to_element(page, "text=Sandbox Test Execution Evidence", steps=28)
+  rec.move_to_element(
+      page,
+      page.get_by_text("Sandbox Test Execution Evidence").first,
+      steps=28,
+  )
   time.sleep(1.0)
-  rec.move_to_element(page, "text=Exit Code", steps=25)
+  rec.move_to_element(page, page.get_by_text("Exit Code").first, steps=25)
   time.sleep(1.5)
   # Hover over pytest stdout
-  rec.move_to_element(page, "text=pytest stdout", steps=25)
+  rec.move_to_element(page, page.get_by_text("pytest stdout").first, steps=25)
   time.sleep(2.0)
 
   # 5. Hover .patch download button and click it (let download happen)
   page.evaluate("window.scrollBy({top: 200, behavior: 'smooth'})")
   time.sleep(0.8)
-  rec.move_to_element(page, 'a:has-text("Download .patch")', steps=30)
+  patch_btn = page.get_by_text("Download .patch").first
+  rec.move_to_element(page, patch_btn, steps=30)
   time.sleep(1.2)
   # Download
   try:
     with page.expect_download(timeout=8000) as download_info:
-      rec.click_element(page, 'a:has-text("Download .patch")', steps=15)
+      rec.click_element(page, patch_btn, steps=15)
     download = download_info.value
     download_path = DEMO_DIR / download.suggested_filename
     download.save_as(str(download_path))
@@ -519,12 +534,10 @@ def scene_4_result_verified(page: Page, rec: DemoRecorder, job_id: str):
   # 6. Scroll back up and point at honesty line
   page.evaluate("window.scrollTo({top: 100, behavior: 'smooth'})")
   time.sleep(0.8)
-  rec.move_to_element(
-      page,
-      "text=Evidence Invariant: Verdict is derived only from executed test"
-      " results",
-      steps=32,
-  )
+  honesty_line = page.get_by_text(
+      "Evidence Invariant: Verdict is derived only from executed test results"
+  ).first
+  rec.move_to_element(page, honesty_line, steps=32)
   time.sleep(4.5)
 
   rec.mark_scene_end(4)
@@ -535,9 +548,10 @@ def scene_5_live_run_2_honest_failure(page: Page, rec: DemoRecorder):
   rec.mark_scene_start(5, "Live Run 2 Honest Failure Inspection")
 
   # Click New Repair
-  rec.move_to_element(page, 'header a:has-text("New Repair"), a[href="/"]', steps=30)
-  rec.click_element(page, 'header a:has-text("New Repair"), a[href="/"]', steps=15)
-  page.wait_for_selector("text=New Repair", timeout=10000)
+  new_repair_btn = page.locator('header a[href="/"], nav a[href="/"]').first
+  rec.move_to_element(page, new_repair_btn, steps=30)
+  rec.click_element(page, new_repair_btn, steps=15)
+  page.wait_for_selector("h1", timeout=10000)
   time.sleep(0.8)
 
   # Upload fixture_unfixable.zip
@@ -562,8 +576,9 @@ def scene_5_live_run_2_honest_failure(page: Page, rec: DemoRecorder):
   time.sleep(1.0)
 
   # Click Analyze and Repair
-  rec.move_to_element(page, 'button:has-text("Analyze and Repair")', steps=30)
-  rec.click_element(page, 'button:has-text("Analyze and Repair")', steps=15)
+  submit_btn = page.locator('button[type="submit"]').first
+  rec.move_to_element(page, submit_btn, steps=30)
+  rec.click_element(page, submit_btn, steps=15)
   logger.info("Submitted run 2. Waiting for Progress page...")
 
   # Wait for progress redirect
@@ -587,16 +602,17 @@ def scene_5_live_run_2_honest_failure(page: Page, rec: DemoRecorder):
   logger.info("Job 2 reached terminal result page!")
   time.sleep(1.0)
 
-  # Check verdict: must be FAILED or NOT_VERIFIED, never VERIFIED!
-  verdict_elem = page.locator(
-      "[data-testid='verdict-badge'], text=FAILED, text=NOT_VERIFIED,"
-      " text=VERIFIED"
-  ).first
-  verdict_text = verdict_elem.inner_text().strip()
-  logger.info(f"Scene 5 Verdict badge text: '{verdict_text}'")
-  rec.job2_verdict = verdict_text
+  # Check verdict from API: must be FAILED or NOT_VERIFIED, never VERIFIED!
+  api_res = json.loads(
+      urllib.request.urlopen(f"{BACKEND_BASE}/api/jobs/{job2_id}/result")
+      .read()
+      .decode()
+  )
+  verdict_api = api_res.get("verdict", "")
+  logger.info(f"Scene 5 Backend API verdict: '{verdict_api}'")
+  rec.job2_verdict = verdict_api
 
-  if "VERIFIED" in verdict_text:
+  if verdict_api == "VERIFIED":
     logger.critical(
         f"FATAL: fixture_unfixable unexpectedly achieved VERIFIED! This"
         f" violates safety."
@@ -606,13 +622,15 @@ def scene_5_live_run_2_honest_failure(page: Page, rec: DemoRecorder):
     )
 
   # Show FAILED verdict badge (hold 4s)
-  rec.move_to_element(page, "text=FAILED", steps=32)
+  rec.move_to_element(page, page.get_by_text("Failed", exact=True).first, steps=32)
   time.sleep(4.0)
 
   # Scroll down to Attempt Cards (Attempt 1 and Attempt 2 Retry)
   page.evaluate("window.scrollBy({top: 400, behavior: 'smooth'})")
   time.sleep(1.0)
-  rec.move_to_element(page, "text=Repair Attempts History", steps=28)
+  rec.move_to_element(
+      page, page.get_by_text("Repair Attempts History").first, steps=28
+  )
   time.sleep(2.0)
   rec.smooth_move(page, 750, 480, steps=25)
   time.sleep(2.5)
@@ -620,9 +638,13 @@ def scene_5_live_run_2_honest_failure(page: Page, rec: DemoRecorder):
   # Scroll down to failing test logs in Test Evidence Panel
   page.evaluate("window.scrollBy({top: 350, behavior: 'smooth'})")
   time.sleep(1.0)
-  rec.move_to_element(page, "text=Sandbox Test Execution Evidence", steps=28)
+  rec.move_to_element(
+      page,
+      page.get_by_text("Sandbox Test Execution Evidence").first,
+      steps=28,
+  )
   time.sleep(1.5)
-  rec.move_to_element(page, "text=Exit Code", steps=25)
+  rec.move_to_element(page, page.get_by_text("Exit Code").first, steps=25)
   time.sleep(2.0)
   # Scroll slowly through failing test output
   page.evaluate("window.scrollBy({top: 250, behavior: 'smooth'})")
@@ -636,9 +658,12 @@ def scene_6_trust_and_limits(page: Page, rec: DemoRecorder):
   rec.mark_scene_start(6, "Trust, Limits & Models Architecture")
 
   # Move to sidebar, click Security Boundaries
-  rec.move_to_element(page, 'nav a:has-text("Security Boundaries")', steps=30)
-  rec.click_element(page, 'nav a:has-text("Security Boundaries")', steps=15)
-  page.wait_for_selector("text=Security & Sandbox Boundaries", timeout=10000)
+  sec_link = page.locator('nav a[href="/security"]').first
+  rec.move_to_element(page, sec_link, steps=30)
+  rec.click_element(page, sec_link, steps=15)
+  page.wait_for_selector(
+      "text=Security & Sandbox Boundaries, h1", timeout=10000
+  )
   time.sleep(1.0)
 
   # Scroll slowly through isolation list (about 10s total)
@@ -651,17 +676,28 @@ def scene_6_trust_and_limits(page: Page, rec: DemoRecorder):
   # Move cursor to sidebar, click Models & Roles
   page.evaluate("window.scrollTo({top: 0, behavior: 'smooth'})")
   time.sleep(0.5)
-  rec.move_to_element(page, 'nav a:has-text("Models & Roles")', steps=30)
-  rec.click_element(page, 'nav a:has-text("Models & Roles")', steps=15)
-  page.wait_for_selector("text=Models & Role Architecture", timeout=10000)
+  models_link = page.locator('nav a[href="/models"]').first
+  rec.move_to_element(page, models_link, steps=30)
+  rec.click_element(page, models_link, steps=15)
+  page.wait_for_selector(
+      "text=Models & Role Architecture, h1", timeout=10000
+  )
 
   # Inspect FAST, REASONING, ADVANCED roles for about 4s
   time.sleep(1.0)
-  rec.move_to_element(page, "text=Planning & Source Inspection", steps=25)
+  rec.move_to_element(
+      page, page.get_by_text("Planning & Source Inspection").first, steps=25
+  )
   time.sleep(1.2)
-  rec.move_to_element(page, "text=Unified Diff Patch Generation", steps=25)
+  rec.move_to_element(
+      page, page.get_by_text("Unified Diff Patch Generation").first, steps=25
+  )
   time.sleep(1.2)
-  rec.move_to_element(page, "text=Bounded Retry & Failure Revision", steps=25)
+  rec.move_to_element(
+      page,
+      page.get_by_text("Bounded Retry & Failure Revision").first,
+      steps=25,
+  )
   time.sleep(1.6)
 
   rec.mark_scene_end(6)
@@ -680,7 +716,9 @@ def scene_7_close(page: Page, rec: DemoRecorder):
   )
 
   # Hover 95.7% badge and stats
-  rec.move_to_element(page, "text=95.7% Verified Pass Rate", steps=28)
+  rec.move_to_element(
+      page, page.get_by_text("95.7% Verified Pass Rate").first, steps=28
+  )
   time.sleep(2.5)
 
   # Move across Nemotron-550B table
@@ -692,10 +730,10 @@ def scene_7_close(page: Page, rec: DemoRecorder):
   # Return to ProofPatch New Repair page
   logger.info("Returning to ProofPatch New Repair dashboard...")
   page.goto(FRONTEND_URL, wait_until="networkidle")
-  page.wait_for_selector("text=New Repair", timeout=10000)
+  page.wait_for_selector("h1", timeout=10000)
 
   # Hold on title for 3s
-  rec.move_to_element(page, "h1:has-text('New Repair')", steps=30)
+  rec.move_to_element(page, page.locator("h1").first, steps=30)
   time.sleep(3.5)
 
   rec.mark_scene_end(7)
@@ -744,10 +782,10 @@ def post_process_video(rec: DemoRecorder, raw_video_path: Path) -> Path:
         "-y",
         "-ss",
         str(raw_start),
-        "-to",
-        str(raw_end),
         "-i",
         str(full_take_path),
+        "-t",
+        str(raw_dur),
         "-c:v",
         "libvpx-vp9",
         "-b:v",
@@ -770,26 +808,21 @@ def post_process_video(rec: DemoRecorder, raw_video_path: Path) -> Path:
     # 2. Convert to standardized MP4 (1920x1080, 30fps, yuv420p)
     scene_mp4 = DEMO_DIR / f"scene{sc_num}_norm.mp4"
 
-    # In Scene 3 & 5, if raw duration exceeds target duration, accelerate the waiting
-    # using setpts filter to hit target_dur cleanly.
-    if raw_dur > target_dur:
-      speed_factor = target_dur / raw_dur
-      vf_filter = (
-          f"setpts={speed_factor}*PTS,scale=1920:1080,fps=30,format=yuv420p"
-      )
-    else:
-      # Pad / hold last frame slightly if shorter
-      vf_filter = "scale=1920:1080,fps=30,format=yuv420p"
+    # Scale PTS so that duration equals target_dur exactly
+    speed_factor = target_dur / raw_dur
+    vf_filter = (
+        f"setpts={speed_factor:.6f}*PTS,scale=1920:1080,fps=30,format=yuv420p"
+    )
 
     cmd_norm = [
         "ffmpeg",
         "-y",
         "-ss",
         str(raw_start),
-        "-to",
-        str(raw_end),
         "-i",
         str(full_take_path),
+        "-t",
+        str(raw_dur),
         "-vf",
         vf_filter,
         "-t",
@@ -929,88 +962,112 @@ def post_process_video(rec: DemoRecorder, raw_video_path: Path) -> Path:
 def run_full_recording(max_attempts: int = 3):
   logger.info("Initializing ProofPatch demo recording session...")
 
-  with sync_playwright() as p:
-    browser = p.chromium.launch(
-        headless=False,  # Headed as requested
-        args=[
-            "--disable-infobars",
-            "--no-default-browser-check",
-            "--force-device-scale-factor=1",
-            "--disable-extensions",
-            "--disable-blink-features=AutomationControlled",
-        ],
-    )
+  for attempt in range(1, max_attempts + 1):
+    logger.info(f"=== RECORDING ATTEMPT {attempt}/{max_attempts} ===")
 
-    ctx = browser.new_context(
-        viewport={"width": 1920, "height": 1080},
-        device_scale_factor=1,
-        record_video_dir=str(RAW_DIR),
-        record_video_size={"width": 1920, "height": 1080},
-        color_scheme="light",
-    )
-    ctx.add_init_script(CURSOR_OVERLAY_SCRIPT)
+    # Clear any previous raw files
+    shutil.rmtree(RAW_DIR, ignore_errors=True)
+    RAW_DIR.mkdir(parents=True, exist_ok=True)
 
-    page = ctx.new_page()
-
-    # Track console errors
-    console_errors = []
-    page.on(
-        "console",
-        lambda msg: (
-            console_errors.append(msg.text) if msg.type == "error" else None
-        ),
-    )
-
-    recorder = DemoRecorder()
-
-    try:
-      # Scene 1: The Problem
-      scene_1_the_problem(page, recorder)
-
-      # Scene 2: What It Is
-      scene_2_what_it_is(page, recorder)
-
-      # Scene 3: Live Run 1 Start
-      job1_id = scene_3_live_run_1_start(page, recorder)
-
-      # Scene 4: Result VERIFIED
-      scene_4_result_verified(page, recorder, job1_id)
-
-      # Scene 5: Live Run 2 Honest Failure
-      scene_5_live_run_2_honest_failure(page, recorder)
-
-      # Scene 6: Trust & Limits
-      scene_6_trust_and_limits(page, recorder)
-
-      # Scene 7: Close
-      scene_7_close(page, recorder)
-
-      logger.info("All 7 scenes executed successfully!")
-
-    finally:
-      page.close()
-      ctx.close()
-      browser.close()
-
-    if console_errors:
-      logger.warning(
-          f"Console errors noted during recording: {console_errors}"
+    with sync_playwright() as p:
+      browser = p.chromium.launch(
+          headless=False,  # Headed as requested
+          args=[
+              "--disable-infobars",
+              "--no-default-browser-check",
+              "--force-device-scale-factor=1",
+              "--disable-extensions",
+              "--disable-blink-features=AutomationControlled",
+          ],
       )
 
-    # Locate raw recorded video
-    raw_videos = list(RAW_DIR.glob("*.webm"))
-    if not raw_videos:
-      raise RuntimeError("No recorded video found in raw directory!")
-    raw_video = raw_videos[-1]
+      ctx = browser.new_context(
+          viewport={"width": 1920, "height": 1080},
+          device_scale_factor=1,
+          record_video_dir=str(RAW_DIR),
+          record_video_size={"width": 1920, "height": 1080},
+          color_scheme="light",
+      )
+      ctx.add_init_script(CURSOR_OVERLAY_SCRIPT)
 
-    # Post-process
-    final_video = post_process_video(recorder, raw_video)
+      page = ctx.new_page()
 
-    # Clean raw_video directory
-    shutil.rmtree(RAW_DIR, ignore_errors=True)
+      # Track console errors
+      console_errors = []
+      page.on(
+          "console",
+          lambda msg: (
+              console_errors.append(msg.text) if msg.type == "error" else None
+          ),
+      )
 
-    logger.info("=== DEMO RECORDING & POST-PROCESSING COMPLETE ===")
-    return recorder, final_video
+      recorder = DemoRecorder()
+
+      try:
+        # Scene 1: The Problem
+        scene_1_the_problem(page, recorder)
+
+        # Scene 2: What It Is
+        scene_2_what_it_is(page, recorder)
+
+        # Scene 3: Live Run 1 Start
+        job1_id = scene_3_live_run_1_start(page, recorder)
+
+        # Scene 4: Result VERIFIED
+        scene_4_result_verified(page, recorder, job1_id)
+
+        # Scene 5: Live Run 2 Honest Failure
+        scene_5_live_run_2_honest_failure(page, recorder)
+
+        # Scene 6: Trust & Limits
+        scene_6_trust_and_limits(page, recorder)
+
+        # Scene 7: Close
+        scene_7_close(page, recorder)
+
+        logger.info("All 7 scenes executed successfully!")
+        run_success = True
+
+      except Exception as exc:
+        logger.error(f"Attempt {attempt} encountered error: {exc}")
+        run_success = False
+
+      finally:
+        page.close()
+        ctx.close()
+        browser.close()
+
+      if console_errors:
+        logger.warning(
+            f"Console errors noted during recording: {console_errors}"
+        )
+
+      # Locate raw recorded video
+      raw_videos = list(RAW_DIR.glob("*.webm"))
+
+      if not run_success:
+        if raw_videos:
+          failed_video = DEMO_DIR / f"attempt_failed_{attempt}.webm"
+          shutil.copy2(str(raw_videos[-1]), str(failed_video))
+          logger.info(f"Saved failed attempt recording to {failed_video}")
+        if attempt < max_attempts:
+          logger.info(f"Retrying recording (attempt {attempt + 1})...")
+          time.sleep(2.0)
+          continue
+        else:
+          logger.critical("All recording attempts failed!")
+          raise RuntimeError("Recording could not achieve VERIFIED result.")
+
+      raw_video = raw_videos[-1]
+
+      # Post-process
+      final_video = post_process_video(recorder, raw_video)
+
+      # Clean raw_video directory
+      shutil.rmtree(RAW_DIR, ignore_errors=True)
+
+      logger.info("=== DEMO RECORDING & POST-PROCESSING COMPLETE ===")
+      return recorder, final_video
 
 
 if __name__ == "__main__":
