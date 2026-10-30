@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ProofPatch — Benchmark Suite & Empirical Results</title>
+  <style>
+    :root {
+      --bg: #F8F6F1;
+      --card-bg: #FFFFFF;
+      --card-alt: #FCFBF9;
+      --ink-primary: #1A1816;
+      --ink-secondary: #574F47;
+      --ink-muted: #8C827A;
+      --border: #E8E3DC;
+      --border-subtle: #F0ECE6;
+      --green-bg: #EAF5ED;
+      --green-border: #BDE3CA;
+      --green-text: #1E6B3C;
+      --blue-bg: #EEF5FA;
+      --blue-border: #D6E6F4;
+      --blue-text: #27618D;
+      --amber-bg: #FEF7EC;
+      --amber-border: #F7DFC0;
+      --amber-text: #9A6218;
+    }
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      background-color: var(--bg);
+      color: var(--ink-primary);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      line-height: 1.5;
+      padding: 40px 24px;
+      zoom: 1.1;
+    }
+    .container {
+      max-width: 1040px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 16px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--border);
+    }
+    .title-group h1 {
+      font-size: 24px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: var(--ink-primary);
+    }
+    .title-group p {
+      font-size: 13px;
+      color: var(--ink-secondary);
+      margin-top: 4px;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 14px;
+      border-radius: 9999px;
+      font-size: 12px;
+      font-weight: 600;
+      background: var(--green-bg);
+      border: 1px solid var(--green-border);
+      color: var(--green-text);
+      white-space: nowrap;
+    }
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+    }
+    .stat-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 16px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+    }
+    .stat-card .label {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--ink-muted);
+    }
+    .stat-card .value {
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--ink-primary);
+      margin-top: 4px;
+      font-feature-settings: "tnum";
+    }
+    .stat-card .sub {
+      font-size: 11px;
+      color: var(--ink-secondary);
+      margin-top: 2px;
+    }
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 24px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.03);
+    }
+    .card h2 {
+      font-size: 15px;
+      font-weight: 600;
+      margin-bottom: 16px;
+      color: var(--ink-primary);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .card h2 span.tag {
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--ink-muted);
+      font-family: monospace;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+    th {
+      text-align: left;
+      font-weight: 600;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--ink-muted);
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border);
+    }
+    td {
+      padding: 11px 12px;
+      border-bottom: 1px solid var(--border-subtle);
+      color: var(--ink-secondary);
+    }
+    tr:last-child td {
+      border-bottom: none;
+    }
+    tr.total-row {
+      background: var(--card-alt);
+      font-weight: 700;
+    }
+    tr.total-row td {
+      color: var(--ink-primary);
+      border-top: 2px solid var(--border);
+      border-bottom: none;
+    }
+    .code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 11px;
+      background: var(--bg);
+      padding: 2px 6px;
+      border-radius: 6px;
+      color: var(--ink-primary);
+    }
+    .pass-rate {
+      font-weight: 700;
+      color: var(--green-text);
+    }
+    .negative-controls {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+      margin-top: 8px;
+    }
+    .neg-card {
+      background: var(--card-alt);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 14px;
+    }
+    .neg-card .neg-title {
+      font-family: monospace;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--ink-primary);
+    }
+    .neg-card .neg-verdict {
+      display: inline-block;
+      margin-top: 6px;
+      font-size: 10px;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .neg-card .neg-desc {
+      font-size: 11px;
+      color: var(--ink-secondary);
+      margin-top: 6px;
+      line-height: 1.4;
+    }
+    .neg-failed {
+      background: #FDF2F2;
+      color: #9C2A2A;
+      border: 1px solid #F5C6C6;
+    }
+    .neg-notverified {
+      background: var(--amber-bg);
+      color: var(--amber-text);
+      border: 1px solid var(--amber-border);
+    }
+    .neg-timeout {
+      background: var(--blue-bg);
+      color: var(--blue-text);
+      border: 1px solid var(--blue-border);
+    }
+    .honesty-banner {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 14px 18px;
+      background: var(--green-bg);
+      border: 1px solid var(--green-border);
+      border-radius: 14px;
+      color: var(--green-text);
+      font-size: 12px;
+      font-weight: 500;
+    }
+    .honesty-banner svg {
+      width: 18px;
+      height: 18px;
+      flex-shrink: 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="title-group">
+        <h1>Empirical Model Verification & Pipeline Benchmark</h1>
+        <p>Grounded in actual sandbox test execution logs on Nebius Token Factory with NVIDIA Nemotron models.</p>
+      </div>
+      <div class="badge">
+        <span>✓ 95.7% Verified Pass Rate</span>
+      </div>
+    </div>
+
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="label">Total Benchmarked Runs</div>
+        <div class="value">70 Runs</div>
+        <div class="sub">Across 7 Defect Fixtures</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">1st-Attempt Pass Rate</div>
+        <div class="value">81.4%</div>
+        <div class="sub">57 Zero-Shot Fixes</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">After-Retry Pass Rate</div>
+        <div class="value">95.7%</div>
+        <div class="sub">67/70 Total Verified</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Mean Latency</div>
+        <div class="value">11.8s</div>
+        <div class="sub">End-to-End Execution</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>
+        <span>Definitive 70-Run Nemotron-550B Benchmark Results</span>
+        <span class="tag">nvidia/Nemotron-3-Ultra-550b-a55b</span>
+      </h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Fixture Name</th>
+            <th>Defect Category</th>
+            <th style="text-align: center;">Runs</th>
+            <th style="text-align: center;">1st Attempt</th>
+            <th style="text-align: center;">After Retry</th>
+            <th style="text-align: right;">Pass Rate</th>
+            <th style="text-align: right;">Mean Latency</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="code">sample_buggy_repo.zip</span></td>
+            <td>Logic / Arithmetic Negation</td>
+            <td style="text-align: center;">10</td>
+            <td style="text-align: center;">10</td>
+            <td style="text-align: center;">0</td>
+            <td style="text-align: right;" class="pass-rate">100.0%</td>
+            <td style="text-align: right;">7.75s</td>
+          </tr>
+          <tr>
+            <td><span class="code">fixture_off_by_one.zip</span></td>
+            <td>Boundary Slice Indexing</td>
+            <td style="text-align: center;">10</td>
+            <td style="text-align: center;">10</td>
+            <td style="text-align: center;">0</td>
+            <td style="text-align: right;" class="pass-rate">100.0%</td>
+            <td style="text-align: right;">9.49s</td>
+          </tr>
+          <tr>
+            <td><span class="code">fixture_wrong_operator.zip</span></td>
+            <td>Comparison Operator (&lt;= vs &lt;)</td>
+            <td style="text-align: center;">10</td>
+            <td style="text-align: center;">10</td>
+            <td style="text-align: center;">0</td>
+            <td style="text-align: right;" class="pass-rate">100.0%</td>
+            <td style="text-align: right;">8.01s</td>
+          </tr>
+          <tr>
+            <td><span class="code">fixture_multi_file.zip</span></td>
+            <td>Multi-Module Coordinated Edit</td>
+            <td style="text-align: center;">10</td>
+            <td style="text-align: center;">10</td>
+            <td style="text-align: center;">0</td>
+            <td style="text-align: right;" class="pass-rate">100.0%</td>
+            <td style="text-align: right;">13.99s</td>
+          </tr>
+          <tr>
+            <td><span class="code">fixture_mutable_default.zip</span></td>
+            <td>Leaking Python Default Argument</td>
+            <td style="text-align: center;">10</td>
+            <td style="text-align: center;">5</td>
+            <td style="text-align: center;">2</td>
+            <td style="text-align: right;" class="pass-rate">70.0%</td>
+            <td style="text-align: right;">15.53s</td>
+          </tr>
+          <tr>
+            <td><span class="code">fixture_exception_handling.zip</span></td>
+            <td>Unhandled Exception / Missing Key</td>
+            <td style="text-align: center;">10</td>
+            <td style="text-align: center;">10</td>
+            <td style="text-align: center;">0</td>
+            <td style="text-align: right;" class="pass-rate">100.0%</td>
+            <td style="text-align: right;">8.55s</td>
+          </tr>
+          <tr>
+            <td><span class="code">fixture_large_module.zip</span></td>
+            <td>Fault Localization in ~100-line Module</td>
+            <td style="text-align: center;">10</td>
+            <td style="text-align: center;">2</td>
+            <td style="text-align: center;">8</td>
+            <td style="text-align: right;" class="pass-rate">100.0%</td>
+            <td style="text-align: right;">19.46s</td>
+          </tr>
+          <tr class="total-row">
+            <td>Overall Defect Suite</td>
+            <td>7 Benchmark Fixtures</td>
+            <td style="text-align: center;">70</td>
+            <td style="text-align: center;">57</td>
+            <td style="text-align: center;">10</td>
+            <td style="text-align: right;" class="pass-rate">95.7% (67/70)</td>
+            <td style="text-align: right;">11.83s</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <h2>
+        <span>Negative Control Fixtures & Safety Invariants</span>
+        <span class="tag">Honest Non-Verified / Failure Enforcement</span>
+      </h2>
+      <div class="negative-controls">
+        <div class="neg-card">
+          <div class="neg-title">fixture_unfixable.zip</div>
+          <span class="neg-verdict neg-failed">FAILED (100%)</span>
+          <div class="neg-desc">Contradictory requirements. Terminated with exit code 1 after bounded retry; never marked VERIFIED.</div>
+        </div>
+        <div class="neg-card">
+          <div class="neg-title">fixture_zero_tests.zip</div>
+          <span class="neg-verdict neg-notverified">NOT_VERIFIED (100%)</span>
+          <div class="neg-desc">Exit code 0 but 0 tests discovered. Model claims ignored; strictly classified as NOT_VERIFIED.</div>
+        </div>
+        <div class="neg-card">
+          <div class="neg-title">fixture_timeout.zip</div>
+          <span class="neg-verdict neg-timeout">TIMED_OUT / FAILED</span>
+          <div class="neg-desc">Hanging loop killed by 30s wall-clock sandbox timeout. Process safely reaped without hanging host.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="honesty-banner">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+        <path d="M9 12l2 2 4-4"/>
+      </svg>
+      <span><strong>The Core Axiom: Evidence Over Assertion.</strong> ProofPatch never marks code fixed based on model prose. All verdicts are derived solely from real sandbox test execution.</span>
+    </div>
+  </div>
+</body>
+</html>

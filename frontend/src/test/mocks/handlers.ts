@@ -13,27 +13,8 @@ import {
 
 export const handlers = [
   // 1. Upload Project: POST /api/projects
-  http.post('*/api/projects', async ({ request }) => {
-    const formData = await request.formData();
-    const file = formData.get('file');
-
-    if (!file || typeof file === 'string') {
-      return HttpResponse.json(mockErrors.BAD_ARCHIVE.body, { status: 400 });
-    }
-
-    const fileName = (file as File).name;
-    if (!fileName.toLowerCase().endsWith('.zip')) {
-      return HttpResponse.json(mockErrors.BAD_ARCHIVE.body, { status: 400 });
-    }
-
-    if ((file as File).size > 20 * 1024 * 1024) {
-      return HttpResponse.json(mockErrors.UPLOAD_TOO_LARGE.body, { status: 413 });
-    }
-
-    return HttpResponse.json({
-      ...mockProjectResponse,
-      project_name: fileName.replace(/\.zip$/i, ''),
-    }, { status: 201 });
+  http.post('*/api/projects', () => {
+    return HttpResponse.json(mockProjectResponse, { status: 201 });
   }),
 
   // 2. Create Job: POST /api/jobs
@@ -64,7 +45,7 @@ export const handlers = [
   // 3. Job Status: GET /api/jobs/:id
   http.get('*/api/jobs/:id', ({ params }) => {
     const { id } = params;
-    if (id === 'non-existent' || id === 'missing') {
+    if (id === 'non-existent' || id === 'missing' || id === 'job-nonexistent') {
       return HttpResponse.json(mockErrors.NOT_FOUND.body, { status: 404 });
     }
     if (id === 'expired') {
@@ -78,16 +59,16 @@ export const handlers = [
   // 4. Job Result: GET /api/jobs/:id/result
   http.get('*/api/jobs/:id/result', ({ params }) => {
     const { id } = params;
-    if (id === 'job-failed' || id === 'failed') {
+    if (id === 'job-failed' || id === 'failed' || id === 'job-fail-123') {
       return HttpResponse.json(mockResultFailed, { status: 200 });
     }
-    if (id === 'job-notverified' || id === 'not-verified') {
+    if (id === 'job-notverified' || id === 'not-verified' || id === 'job-notverified-123') {
       return HttpResponse.json(mockResultNotVerified, { status: 200 });
     }
-    if (id === 'job-blocked' || id === 'blocked') {
+    if (id === 'job-blocked' || id === 'blocked' || id === 'job-blocked-123') {
       return HttpResponse.json(mockResultBlocked, { status: 200 });
     }
-    if (id === 'non-existent') {
+    if (id === 'non-existent' || id === 'missing' || id === 'job-nonexistent' || id === 'job-expired-123') {
       return HttpResponse.json(mockErrors.NOT_FOUND.body, { status: 404 });
     }
     if (id === 'expired') {
@@ -100,26 +81,28 @@ export const handlers = [
   // 5. Download Artifacts: GET /api/jobs/:id/download
   http.get('*/api/jobs/:id/download', ({ request, params }) => {
     const url = new URL(request.url);
-    const format = url.searchParams.get('format');
+    const format = url.searchParams.get('format') ?? 'patch';
     const { id } = params;
 
-    if (id === 'expired' || id === 'missing') {
+    if (id === 'non-existent') {
       return HttpResponse.json(mockErrors.NOT_FOUND.body, { status: 404 });
     }
 
-    if (format === 'patch') {
-      return new HttpResponse('--- a/src/core.py\n+++ b/src/core.py\n@@ -1,1 +1,1 @@\n-0\n+42\n', {
+    if (format === 'zip') {
+      return new HttpResponse(new Uint8Array([0x50, 0x4b, 0x03, 0x04]), {
+        status: 200,
         headers: {
-          'Content-Type': 'text/x-diff',
-          'Content-Disposition': `attachment; filename="patch_${id}.patch"`,
+          'Content-Type': 'application/zip',
+          'Content-Disposition': `attachment; filename="proofpatch_${String(id).slice(0, 8)}.zip"`,
         },
       });
     }
 
-    return new HttpResponse(new Uint8Array([80, 75, 5, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]), {
+    return new HttpResponse('--- a/file.py\n+++ b/file.py\n@@ -1 +1 @@\n-old\n+new\n', {
+      status: 200,
       headers: {
-        'Content-Type': 'application/zip',
-        'Content-Disposition': `attachment; filename="repaired_${id}.zip"`,
+        'Content-Type': 'text/x-diff',
+        'Content-Disposition': `attachment; filename="proofpatch_${String(id).slice(0, 8)}.patch"`,
       },
     });
   }),
@@ -127,35 +110,33 @@ export const handlers = [
   // 6. List Jobs: GET /api/jobs
   http.get('*/api/jobs', ({ request }) => {
     const url = new URL(request.url);
-    const verdict = url.searchParams.get('verdict');
-    const status = url.searchParams.get('status');
-
-    if (verdict === 'INVALID_VERDICT' || status === 'INVALID_STATUS') {
-      return HttpResponse.json({
-        error: { code: 'INVALID_FILTER', message: 'Invalid query filter', request_id: 'req_err_filter' },
-      }, { status: 400 });
-    }
+    const statusFilter = url.searchParams.get('status');
+    const verdictFilter = url.searchParams.get('verdict');
+    const limit = parseInt(url.searchParams.get('limit') ?? '50', 10);
+    const offset = parseInt(url.searchParams.get('offset') ?? '0', 10);
 
     let filtered = [...mockJobListResponse.jobs];
-    if (verdict) {
-      filtered = filtered.filter((j) => j.verdict === verdict);
+    if (statusFilter) {
+      filtered = filtered.filter((j) => j.status === statusFilter);
     }
-    if (status) {
-      filtered = filtered.filter((j) => j.status === status);
+    if (verdictFilter) {
+      filtered = filtered.filter((j) => j.verdict === verdictFilter);
     }
 
     return HttpResponse.json({
       total: filtered.length,
-      jobs: filtered,
+      limit,
+      offset,
+      jobs: filtered.slice(offset, offset + limit),
     }, { status: 200 });
   }),
 
-  // 7. Health: GET /health
+  // 7. System Health: GET /health
   http.get('*/health', () => {
     return HttpResponse.json({
       status: 'ok',
-      version: '1.0.0',
       database: 'connected',
+      version: '1.0.0',
     }, { status: 200 });
   }),
 ];

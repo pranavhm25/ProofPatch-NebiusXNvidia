@@ -113,6 +113,7 @@ export function Dropzone({
           accept=".zip,application/zip"
           className="sr-only"
           onChange={onInputChange}
+          onClick={(e) => e.stopPropagation()}
           aria-label="Upload repository archive"
           data-testid="dropzone-file-input"
           tabIndex={-1}

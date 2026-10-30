@@ -9,24 +9,50 @@ describe('DiffViewer', () => {
     available: true,
     changed_files: ['calc.py'],
     unified_diff: `--- a/calc.py\n+++ b/calc.py\n@@ -1,3 +1,3 @@\n def add(a, b):\n-    return a - b\n+    return a + b\n`,
-    download_patch_url: '/api/jobs/job-123/download/patch',
-    download_zip_url: '/api/jobs/job-123/download/patched-zip',
+    download_patch_url: '/api/jobs/job-123/download?format=patch',
+    download_zip_url: '/api/jobs/job-123/download?format=zip',
   };
 
-  it('renders diff viewer with changed file and hunk lines', () => {
+  const multiFileDiff: DiffInfo = {
+    available: true,
+    changed_files: ['calc.py', 'utils.py'],
+    unified_diff: `--- a/calc.py\n+++ b/calc.py\n@@ -1,3 +1,3 @@\n def add(a, b):\n-    return a - b\n+    return a + b\n--- a/utils.py\n+++ b/utils.py\n@@ -10,2 +10,2 @@\n-def old_util(): pass\n+def new_util(): pass\n`,
+    download_patch_url: '/api/jobs/job-123/download?format=patch',
+    download_zip_url: '/api/jobs/job-123/download?format=zip',
+  };
+
+  it('renders diff viewer with changed file, hunk header, and line numbers', () => {
     render(<DiffViewer diff={sampleDiff} jobId="job-123" />);
     const fileLabels = screen.getAllByText('calc.py');
     expect(fileLabels.length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('return a - b')).toBeInTheDocument();
     expect(screen.getByText('return a + b')).toBeInTheDocument();
+    expect(screen.getByText('@@ -1,3 +1,3 @@')).toBeInTheDocument();
     expect(screen.getAllByText('+1').length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText('-1').length).toBeGreaterThanOrEqual(1);
   });
 
-  it('renders download buttons for .patch and .zip', () => {
+  it('switches files in multi-file diff view', () => {
+    render(<DiffViewer diff={multiFileDiff} jobId="job-123" />);
+    expect(screen.getAllByText('calc.py').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText('utils.py')).toBeInTheDocument();
+
+    // Initially calc.py is visible
+    expect(screen.getByText('return a - b')).toBeInTheDocument();
+
+    // Click utils.py tab
+    fireEvent.click(screen.getByRole('button', { name: /utils\.py/i }));
+    expect(screen.getByText('def old_util(): pass')).toBeInTheDocument();
+    expect(screen.getByText('def new_util(): pass')).toBeInTheDocument();
+  });
+
+  it('renders download buttons for .patch and .zip with correct links', () => {
     render(<DiffViewer diff={sampleDiff} jobId="job-123" />);
-    expect(screen.getByText('Download .patch')).toBeInTheDocument();
-    expect(screen.getByText('Download patched .zip')).toBeInTheDocument();
+    const patchLink = screen.getByText('Download .patch').closest('a');
+    const zipLink = screen.getByText('Download patched .zip').closest('a');
+
+    expect(patchLink).toHaveAttribute('href', '/api/jobs/job-123/download?format=patch');
+    expect(zipLink).toHaveAttribute('href', '/api/jobs/job-123/download?format=zip');
   });
 
   it('shows empty message when diff is not available', () => {
@@ -55,4 +81,3 @@ describe('DiffViewer', () => {
     expect(writeText).toHaveBeenCalledWith(sampleDiff.unified_diff);
   });
 });
-

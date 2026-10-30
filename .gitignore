@@ -71,3 +71,9 @@ coverage/
 frontend/coverage/
 playwright-report/
 test-results/
+
+# ─── Demo video outputs ───────────────────────────────────────────────────────
+docs/demo/*.webm
+docs/demo/*.mp4
+docs/demo/*.png
+
