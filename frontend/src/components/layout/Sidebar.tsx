@@ -143,7 +143,7 @@ export function Sidebar({ currentJobId, onOpenSearch }: SidebarProps) {
       <div className="flex-1 overflow-y-auto space-y-5 pr-1">
         {/* Workspace section */}
         <div>
-          <p className="px-2 mb-1.5 text-[10px] font-semibold text-ink-muted dark:text-dark-ink-muted uppercase tracking-wider">
+          <p className="px-2 mb-1.5 text-[11px] font-semibold text-ink-secondary dark:text-dark-ink-secondary uppercase tracking-wider">
             Workspace
           </p>
           <nav className="space-y-0.5" aria-label="Workspace navigation">
@@ -163,24 +163,24 @@ export function Sidebar({ currentJobId, onOpenSearch }: SidebarProps) {
                 <div className="absolute left-3.5 top-1 bottom-2 w-px bg-warm-border dark:bg-dark-border" />
 
                 <NavLink to="/jobs?filter=all" className={() => subNavLinkClass('all')}>
-                  <span className="text-ink-muted dark:text-dark-ink-muted select-none">└─</span>
+                  <span className="text-ink-secondary dark:text-dark-ink-secondary select-none">└─</span>
                   <span>All Jobs</span>
                 </NavLink>
 
                 <NavLink to="/jobs?filter=verified" className={() => subNavLinkClass('verified')}>
-                  <span className="text-ink-muted dark:text-dark-ink-muted select-none">└─</span>
+                  <span className="text-ink-secondary dark:text-dark-ink-secondary select-none">└─</span>
                   <CheckCircle2 className="h-3 w-3 text-[#1E6B3C] dark:text-emerald-400 shrink-0" strokeWidth={1.5} />
                   <span>Verified</span>
                 </NavLink>
 
                 <NavLink to="/jobs?filter=running" className={() => subNavLinkClass('running')}>
-                  <span className="text-ink-muted dark:text-dark-ink-muted select-none">└─</span>
+                  <span className="text-ink-secondary dark:text-dark-ink-secondary select-none">└─</span>
                   <AlertCircle className="h-3 w-3 text-[#27618D] dark:text-sky-400 shrink-0" strokeWidth={1.5} />
                   <span>Running</span>
                 </NavLink>
 
                 <NavLink to="/jobs?filter=failed" className={() => subNavLinkClass('failed')}>
-                  <span className="text-ink-muted dark:text-dark-ink-muted select-none">└─</span>
+                  <span className="text-ink-secondary dark:text-dark-ink-secondary select-none">└─</span>
                   <XCircle className="h-3 w-3 text-[#9C2A2A] dark:text-red-400 shrink-0" strokeWidth={1.5} />
                   <span>Failed</span>
                 </NavLink>
@@ -191,7 +191,7 @@ export function Sidebar({ currentJobId, onOpenSearch }: SidebarProps) {
 
         {/* Insight section */}
         <div>
-          <p className="px-2 mb-1.5 text-[10px] font-semibold text-ink-muted dark:text-dark-ink-muted uppercase tracking-wider">
+          <p className="px-2 mb-1.5 text-[11px] font-semibold text-ink-secondary dark:text-dark-ink-secondary uppercase tracking-wider">
             Insight
           </p>
           <nav className="space-y-0.5" aria-label="Insight navigation">
@@ -212,7 +212,7 @@ export function Sidebar({ currentJobId, onOpenSearch }: SidebarProps) {
 
         {/* Info section */}
         <div>
-          <p className="px-2 mb-1.5 text-[10px] font-semibold text-ink-muted dark:text-dark-ink-muted uppercase tracking-wider">
+          <p className="px-2 mb-1.5 text-[11px] font-semibold text-ink-secondary dark:text-dark-ink-secondary uppercase tracking-wider">
             Info
           </p>
           <nav className="space-y-0.5" aria-label="Information navigation">
@@ -231,7 +231,7 @@ export function Sidebar({ currentJobId, onOpenSearch }: SidebarProps) {
 
       {/* Footer / System Status */}
       <div className="pt-3 border-t border-warm-border dark:border-dark-border mt-auto px-1">
-        <div className="flex items-center justify-between text-[11px] text-ink-muted dark:text-dark-ink-muted">
+        <div className="flex items-center justify-between text-[11px] text-ink-secondary dark:text-dark-ink-secondary">
           <span className="flex items-center gap-1.5">
             <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
             Backend Active

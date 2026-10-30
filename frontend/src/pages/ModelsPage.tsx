@@ -120,7 +120,12 @@ export function ModelsPage() {
           Over 310 live benchmark executions were recorded across 7 defect fixtures:
         </p>
 
-        <div className="overflow-x-auto text-xs">
+        <div
+          tabIndex={0}
+          role="region"
+          aria-label="Empirical Benchmark Table"
+          className="overflow-x-auto text-xs focus:outline-none focus:ring-1 focus:ring-warm-border dark:focus:ring-dark-border rounded-lg"
+        >
           <table className="w-full border-collapse">
             <thead>
               <tr className="border-b border-warm-border dark:border-dark-border text-left text-[11px] text-ink-secondary dark:text-dark-ink-secondary font-semibold">

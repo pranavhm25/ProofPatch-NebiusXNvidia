@@ -34,15 +34,15 @@ export default {
         },
         ink: {
           primary: '#2A2420',
-          secondary: '#5C544E',
-          muted: '#736B63',
-          light: '#8F857B',
+          secondary: '#4D4640',
+          muted: '#615951',
+          light: '#786F66',
         },
         'dark-ink': {
           primary: '#EDE8E1',
-          secondary: '#ABA197',
-          muted: '#7F766C',
-          light: '#5B544C',
+          secondary: '#C4BCB3',
+          muted: '#A39A8F',
+          light: '#857D74',
         },
         verdict: {
           verified: {

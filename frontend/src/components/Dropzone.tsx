@@ -87,6 +87,17 @@ export function Dropzone({
 
   return (
     <div className="space-y-2">
+      <input
+        ref={inputRef}
+        type="file"
+        accept=".zip,application/zip"
+        className="sr-only"
+        onChange={onInputChange}
+        aria-label="Upload repository archive"
+        data-testid="dropzone-file-input"
+        tabIndex={-1}
+        disabled={disabled}
+      />
       <div
         onDragOver={(e) => {
           e.preventDefault();
@@ -107,18 +118,6 @@ export function Dropzone({
           }
         }}
       >
-        <input
-          ref={inputRef}
-          type="file"
-          accept=".zip,application/zip"
-          className="sr-only"
-          onChange={onInputChange}
-          onClick={(e) => e.stopPropagation()}
-          aria-label="Upload repository archive"
-          data-testid="dropzone-file-input"
-          tabIndex={-1}
-          disabled={disabled}
-        />
 
         {state === 'accepted' && selectedFile ? (
           <div className="flex flex-col items-center gap-2">

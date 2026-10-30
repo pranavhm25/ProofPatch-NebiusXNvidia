@@ -11,7 +11,7 @@ const ABOUT_FAQS: AccordionItem[] = [
     question: 'How does ProofPatch eliminate hallucinated code fixes?',
     answer: (
       <p>
-        ProofPatch enforces an absolute <strong>Evidence Over Assertion</strong> invariant: models never declare their own success. A repair job receives a <code className="font-mono text-[11px] bg-warm-pill dark:bg-dark-pill px-1 rounded">VERIFIED</code> badge only when automated test suites pass inside an isolated subprocess with return code 0. If tests fail or are missing, an explicit <code className="font-mono text-[11px] bg-warm-pill dark:bg-dark-pill px-1 rounded">NOT_VERIFIED</code> or <code className="font-mono text-[11px] bg-warm-pill dark:bg-dark-pill px-1 rounded">FAILED</code> verdict is returned along with raw execution output.
+        ProofPatch enforces an absolute <strong>Evidence Over Assertion</strong> invariant: models never declare their own success. A repair job receives a <code className="font-mono text-[11px] bg-warm-pill dark:bg-dark-pill text-ink-primary dark:text-dark-ink-primary font-semibold px-1.5 py-0.5 rounded">VERIFIED</code> badge only when automated test suites pass inside an isolated subprocess with return code 0. If tests fail or are missing, an explicit <code className="font-mono text-[11px] bg-warm-pill dark:bg-dark-pill text-ink-primary dark:text-dark-ink-primary font-semibold px-1.5 py-0.5 rounded">NOT_VERIFIED</code> or <code className="font-mono text-[11px] bg-warm-pill dark:bg-dark-pill text-ink-primary dark:text-dark-ink-primary font-semibold px-1.5 py-0.5 rounded">FAILED</code> verdict is returned along with raw execution output.
       </p>
     ),
   },

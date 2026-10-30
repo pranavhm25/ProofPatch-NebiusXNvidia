@@ -220,10 +220,10 @@ export function JobsPage() {
                 className="h-4 w-4 rounded-md border-warm-border dark:border-dark-border text-ink-primary dark:text-dark-ink-primary focus:ring-1 focus:ring-ink-primary dark:focus:ring-dark-ink-primary"
               />
             </div>
-            <div className="w-32">Job ID</div>
+            <div className="hidden sm:block w-32">Job ID</div>
             <div className="flex-1">Repository & Defect Summary</div>
-            <div className="w-32 text-center">Verdict</div>
-            <div className="w-24 text-right">Duration</div>
+            <div className="w-28 sm:w-32 text-center">Verdict</div>
+            <div className="hidden md:block w-24 text-right">Duration</div>
             <div className="w-12 text-right"></div>
           </div>
 
@@ -253,7 +253,7 @@ export function JobsPage() {
                   </div>
 
                   {/* Job ID & Created */}
-                  <div className="w-32">
+                  <div className="hidden sm:block w-32">
                     <span className="font-mono font-semibold text-ink-primary dark:text-dark-ink-primary">
                       {job.jobId.slice(0, 8)}
                     </span>
@@ -273,12 +273,12 @@ export function JobsPage() {
                   </div>
 
                   {/* Verdict Pill */}
-                  <div className="w-32 flex justify-center">
+                  <div className="w-28 sm:w-32 flex justify-center">
                     <VerdictBadge verdict={job.verdict ?? (job.status as any)} size="sm" />
                   </div>
 
                   {/* Duration & Attempts */}
-                  <div className="w-24 text-right font-mono text-[11px] text-ink-secondary dark:text-dark-ink-secondary">
+                  <div className="hidden md:block w-24 text-right font-mono text-[11px] text-ink-secondary dark:text-dark-ink-secondary">
                     {job.durationSeconds ? `${job.durationSeconds.toFixed(1)}s` : '—'}
                     <p className="text-[10px] text-ink-muted dark:text-dark-ink-muted">
                       {job.attemptCount} att

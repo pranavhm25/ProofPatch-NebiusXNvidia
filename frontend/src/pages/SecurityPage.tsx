@@ -28,10 +28,10 @@ export function SecurityPage() {
           </div>
           <p className="text-xs text-ink-secondary dark:text-dark-ink-secondary leading-relaxed">
             Before launching test runners in the sandbox, all API keys and secrets matching patterns like{' '}
-            <code className="font-mono text-[10px] bg-warm-pill dark:bg-dark-pill px-1 rounded">NEBIUS*</code>,{' '}
-            <code className="font-mono text-[10px] bg-warm-pill dark:bg-dark-pill px-1 rounded">OPENAI*</code>,{' '}
-            <code className="font-mono text-[10px] bg-warm-pill dark:bg-dark-pill px-1 rounded">TOKEN*</code>, and{' '}
-            <code className="font-mono text-[10px] bg-warm-pill dark:bg-dark-pill px-1 rounded">KEY*</code> are purged from the child process environment dictionary.
+            <code className="font-mono text-[10px] bg-warm-pill dark:bg-dark-pill text-ink-primary dark:text-dark-ink-primary font-semibold px-1.5 py-0.5 rounded">NEBIUS*</code>,{' '}
+            <code className="font-mono text-[10px] bg-warm-pill dark:bg-dark-pill text-ink-primary dark:text-dark-ink-primary font-semibold px-1.5 py-0.5 rounded">OPENAI*</code>,{' '}
+            <code className="font-mono text-[10px] bg-warm-pill dark:bg-dark-pill text-ink-primary dark:text-dark-ink-primary font-semibold px-1.5 py-0.5 rounded">TOKEN*</code>, and{' '}
+            <code className="font-mono text-[10px] bg-warm-pill dark:bg-dark-pill text-ink-primary dark:text-dark-ink-primary font-semibold px-1.5 py-0.5 rounded">KEY*</code> are purged from the child process environment dictionary.
           </p>
         </div>
 

@@ -85,14 +85,14 @@ function ToastItem({ toast, onClose }: { toast: Toast; onClose: () => void }) {
       <div className="flex-1 text-xs">
         <p className="font-semibold text-[#2A2420] dark:text-dark-ink-primary">{toast.title}</p>
         {toast.message && (
-          <p className="mt-0.5 text-[#7A726B] dark:text-dark-ink-secondary leading-relaxed">
+          <p className="mt-0.5 text-ink-secondary dark:text-dark-ink-secondary leading-relaxed">
             {toast.message}
           </p>
         )}
       </div>
       <button
         onClick={onClose}
-        className="p-1 rounded-lg text-[#9E968F] dark:text-dark-ink-muted hover:text-[#2A2420] dark:hover:text-dark-ink-primary hover:bg-[#F3EFEA] dark:hover:bg-dark-pill transition-colors focus-visible:outline-2"
+        className="p-1 rounded-lg text-ink-secondary dark:text-dark-ink-muted hover:text-[#2A2420] dark:hover:text-dark-ink-primary hover:bg-[#F3EFEA] dark:hover:bg-dark-pill transition-colors focus-visible:outline-2"
         aria-label="Dismiss toast"
       >
         <X className="h-3.5 w-3.5" strokeWidth={1.5} />

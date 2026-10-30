@@ -9,8 +9,8 @@
   --color-warm-border: #E8E2D9;
   --color-warm-border-subtle: #F0ECE6;
   --color-text-primary: #2A2420;
-  --color-text-secondary: #5C544E;
-  --color-text-muted: #736B63;
+  --color-text-secondary: #4D4640;
+  --color-text-muted: #615951;
 }
 
 html.dark {
@@ -20,8 +20,8 @@ html.dark {
   --color-warm-border: #35302A;
   --color-warm-border-subtle: #2B2621;
   --color-text-primary: #EDE8E1;
-  --color-text-secondary: #ABA197;
-  --color-text-muted: #7F766C;
+  --color-text-secondary: #C4BCB3;
+  --color-text-muted: #A39A8F;
   color-scheme: dark;
 }
 
