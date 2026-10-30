@@ -18,3 +18,4 @@ export function AppLayout({ children, currentJobId }: AppLayoutProps) {
     </div>
   );
 }
+

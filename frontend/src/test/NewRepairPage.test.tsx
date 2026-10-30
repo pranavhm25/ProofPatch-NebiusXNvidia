@@ -75,3 +75,4 @@ describe('NewRepairPage', () => {
     expect(submitBtn).not.toBeDisabled();
   });
 });
+

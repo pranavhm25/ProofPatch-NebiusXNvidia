@@ -42,3 +42,4 @@ export function PillTabs<T extends string = string>({ tabs, activeTab, onChange 
     </div>
   );
 }
+

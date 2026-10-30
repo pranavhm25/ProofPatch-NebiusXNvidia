@@ -55,3 +55,4 @@ describe('DiffViewer', () => {
     expect(writeText).toHaveBeenCalledWith(sampleDiff.unified_diff);
   });
 });
+

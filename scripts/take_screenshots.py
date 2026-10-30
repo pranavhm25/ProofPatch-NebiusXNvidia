@@ -104,3 +104,4 @@ print('Captured 08_mobile_view.png')
 
 driver.quit()
 print('All screenshots captured successfully!')
+

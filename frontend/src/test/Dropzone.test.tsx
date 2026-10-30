@@ -53,3 +53,4 @@ describe('Dropzone', () => {
     expect(screen.getByText(/Archive exceeds maximum upload size/i)).toBeInTheDocument();
   });
 });
+

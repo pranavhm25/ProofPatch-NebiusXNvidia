@@ -40,3 +40,4 @@ describe('VerdictBadge', () => {
     expect(badge.parentElement).toHaveClass('font-semibold');
   });
 });
+
