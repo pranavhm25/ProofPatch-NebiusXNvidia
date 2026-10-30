@@ -145,6 +145,21 @@ export function ResultPage() {
           </p>
         </div>
 
+        {/* Test Integrity Verified Badge */}
+        {result.summary && result.summary.includes('Test files unmodified') && (
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[#EAF5ED] dark:bg-emerald-950/40 border border-[#BDE3CA] dark:border-emerald-800 text-xs text-[#1E6B3C] dark:text-emerald-300 font-medium">
+            <ShieldCheck className="h-4 w-4 shrink-0" />
+            <span>Anti-Tampering Verified: Pristine baseline SHA-256 test hashes matched; all baseline tests executed.</span>
+          </div>
+        )}
+
+        {/* Hardcoding Heuristic Review Warning */}
+        {result.summary && result.summary.includes('Review recommended') && (
+          <div className="p-3 rounded-lg bg-[#FEF7EC] dark:bg-amber-950/40 border border-[#F7DFC0] dark:border-amber-800 text-xs text-[#9A6218] dark:text-amber-300">
+            <span className="font-semibold">Review recommended:</span> The patch adds a value that also appears in the tests. Passing tests do not prove the fix is general.
+          </div>
+        )}
+
         {/* Visible Honesty Line */}
         <div className="flex items-center gap-2 pt-3 border-t border-warm-border/60 dark:border-dark-border/60 text-[11px] text-[#1E6B3C] dark:text-emerald-400">
           <ShieldCheck className="h-4 w-4 shrink-0" strokeWidth={1.5} />

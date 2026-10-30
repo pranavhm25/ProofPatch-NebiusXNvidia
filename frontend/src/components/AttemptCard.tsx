@@ -73,6 +73,11 @@ export function AttemptCard({ attempt, defaultOpen = false }: AttemptCardProps) 
                 <span>{attempt.status.replace(/_/g, ' ')}</span>
               </span>
             </div>
+            {attempt.status === 'PATCH_REJECTED' && (
+              <p className="text-[11px] text-[#9C2A2A] dark:text-red-400 mt-1 font-medium">
+                The model tried to change the tests. ProofPatch only allows source changes.
+              </p>
+            )}
             {attempt.changed_files.length > 0 && (
               <p className="flex items-center gap-1.5 text-[11px] text-ink-secondary dark:text-dark-ink-secondary mt-0.5">
                 <FileCode className="h-3 w-3 text-ink-muted dark:text-dark-ink-muted" />
